@@ -64,8 +64,11 @@ Decided with the user during brainstorming:
   reached by URL.
 - **Database: PostgreSQL 16 + TimescaleDB, in Docker** (`docker compose up`).
   Identical on a VPS. Docker Desktop must be installed (requires WSL2).
-- **Python 3.12 installed alongside the existing 3.9 via `uv`.** Current
-  pandas / XGBoost / LightGBM require >= 3.10. The existing 3.9 is untouched.
+- **Python 3.13.3, already installed on the machine** (the `py` launcher
+  defaults to it; the old 3.9 stays untouched and unused). Current
+  pandas / XGBoost / LightGBM require >= 3.10, so 3.9 is not an option. A
+  plain `venv` is used rather than `uv`, since no extra Python install is
+  needed.
 - **Data scope: candles only** (option A). Live best bid/ask is recorded from
   day one; live order-book depth recording is deferred to a later sub-project
   because order-flow features need months of recorded data before they are
