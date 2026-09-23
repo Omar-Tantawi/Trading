@@ -44,6 +44,22 @@ def test_retries_then_succeeds_on_500():
 
 
 @respx.mock
+def test_no_sleep_after_final_exhausted_attempt():
+    # Every attempt returns a retryable 5xx, so all attempts are used up.
+    # There must be no sleep after the last one: nothing follows it, so
+    # sleeping there is pure wasted latency before raising.
+    route = respx.get(f"{BASE}/api/v3/ping").mock(
+        return_value=httpx.Response(500)
+    )
+    sleeps: list[float] = []
+    api = BinanceRest(base_url=BASE, sleep=sleeps.append, attempts=4)
+    with pytest.raises(httpx.HTTPStatusError):
+        api.get("/api/v3/ping", {})
+    assert route.call_count == 4
+    assert len(sleeps) == route.call_count - 1
+
+
+@respx.mock
 def test_429_raises_rate_limited_with_retry_after():
     respx.get(f"{BASE}/api/v3/ping").mock(
         return_value=httpx.Response(429, headers={"Retry-After": "120"})

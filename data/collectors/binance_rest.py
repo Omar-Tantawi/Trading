@@ -60,9 +60,12 @@ class BinanceRest:
                 last_exc = httpx.HTTPStatusError(
                     f"HTTP {resp.status_code}", request=resp.request, response=resp
                 )
-                log.warning("binance %s -> %s, retrying in %.1fs",
-                            path, resp.status_code, delay)
-                self.sleep(delay)
+                if attempt < len(delays) - 1:
+                    # Only sleep if another attempt follows; sleeping before
+                    # giving up on the last attempt is pure wasted latency.
+                    log.warning("binance %s -> %s, retrying in %.1fs",
+                                path, resp.status_code, delay)
+                    self.sleep(delay)
                 continue
             resp.raise_for_status()
             return resp.json()
