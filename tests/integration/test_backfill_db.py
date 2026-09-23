@@ -209,3 +209,53 @@ def test_tail_seeds_from_first_candle_time_when_nothing_is_loaded_yet(db_conn):
     assert api.kline_calls, "the REST tail must have been used at all"
     last = last_candle_time(db_conn, "ETHUSDT")
     assert last == datetime(2024, 3, 1, 0, 4, tzinfo=timezone.utc)
+
+
+def test_a_404_month_is_recorded_missing_and_re_requested_next_run(db_conn):
+    """A post-listing month that 404s (e.g. a re-run on the 1st-3rd, before
+    Binance publishes the previous month) must not be recorded 'success':
+    that would skip it forever. It is recorded 'missing' and retried."""
+    upsert_symbol(db_conn, symbol="BTCUSDT")
+    until = datetime(2024, 2, 5, tzinfo=timezone.utc)
+    dl = FakeDownloader({})  # January not published yet
+
+    assert backfill_symbol(db_conn, "BTCUSDT", dl, FakeApi(), until=until) == 0
+    with db_conn.cursor() as cur:
+        cur.execute("SELECT status, rows_written FROM ingestion_runs "
+                    "WHERE component = 'backfill' AND symbol = 'BTCUSDT'")
+        assert cur.fetchall() == [("missing", 0)]
+
+    # Binance publishes January; the next run must fetch and load it.
+    dl.blob_by_month[(2024, 1)] = make_zip(CSV)
+    written = backfill_symbol(db_conn, "BTCUSDT", dl, FakeApi(), until=until)
+    assert written == 1
+    assert dl.calls.count(("BTCUSDT", 2024, 1)) == 2, "January must be re-requested"
+    with db_conn.cursor() as cur:
+        cur.execute("SELECT status FROM ingestion_runs WHERE component = "
+                    "'backfill' AND symbol = 'BTCUSDT' ORDER BY id")
+        assert [r[0] for r in cur.fetchall()] == ["missing", "success"]
+
+
+def test_migration_002_reopens_months_the_old_code_marked_success(db_conn):
+    """Databases written by the old code hold 0-row 'success' rows for
+    404'd months. Migration 002 turns them into 'missing' so they are
+    re-requested; real loads (rows > 0) are untouched."""
+    from pathlib import Path
+
+    from data.storage.db import MIGRATIONS_DIR
+    from data.storage.repository import finish_run, start_run
+
+    jan = (datetime(2024, 1, 1, tzinfo=timezone.utc),
+           datetime(2024, 2, 1, tzinfo=timezone.utc))
+    feb = (datetime(2024, 2, 1, tzinfo=timezone.utc),
+           datetime(2024, 3, 1, tzinfo=timezone.utc))
+    finish_run(db_conn, start_run(db_conn, "backfill", "BTCUSDT", *jan), "success", 0)
+    finish_run(db_conn, start_run(db_conn, "backfill", "BTCUSDT", *feb), "success", 44640)
+
+    sql = Path(MIGRATIONS_DIR, "002_backfill_missing_status.sql").read_text()
+    with db_conn.cursor() as cur:
+        cur.execute(sql)
+    db_conn.commit()
+
+    from data.storage.repository import completed_periods
+    assert completed_periods(db_conn, "backfill", "BTCUSDT") == {feb}

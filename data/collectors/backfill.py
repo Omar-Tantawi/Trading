@@ -103,7 +103,7 @@ def backfill_symbol(conn, symbol: str, downloader, api: BinanceRest,
     """Load monthly archives, then daily archives, then the REST tail.
 
     Resumable: months already recorded as successful runs are skipped.
-    Months that predate the symbol's listing 404 and are skipped quietly.
+    A month whose archive 404s is recorded 'missing' and retried next run.
 
     `start`, if given, moves the beginning of the monthly-archive loop
     forward to max(start, the symbol's listing date) instead of always
@@ -125,8 +125,14 @@ def backfill_symbol(conn, symbol: str, downloader, api: BinanceRest,
         try:
             blob = downloader.fetch_month(symbol, year, month)
             if blob is None:
-                # Before listing, or not published yet. Not an error.
-                finish_run(conn, run_id, "success", 0)
+                # The loop starts at the listing date, so every month here
+                # should exist. A 404 means "not published yet" (e.g. a run
+                # on the 1st-3rd, before Binance publishes last month).
+                # 'missing' is not in `done`, so the next run asks again;
+                # recording 'success' would skip this month forever.
+                finish_run(conn, run_id, "missing", 0)
+                log.warning("%s %04d-%02d: monthly archive not published yet; "
+                            "will retry on the next run", symbol, year, month)
                 continue
             candles = archive.rows_from_zip(blob, symbol)
             written = upsert_candles(conn, candles)
