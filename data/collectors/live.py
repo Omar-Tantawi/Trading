@@ -1,11 +1,12 @@
 import asyncio
 import json
 import logging
+import random
 from datetime import datetime, timedelta, timezone
 
 import websockets
 
-from data.collectors.binance_rest import REST_SETTLE, BinanceRest
+from data.collectors.binance_rest import REST_SETTLE, BinanceRest, RateLimitedError
 from data.collectors.binance_ws import (
     parse_book_ticker_message,
     parse_kline_message,
@@ -26,6 +27,29 @@ log = logging.getLogger(__name__)
 
 BOOK_FLUSH_SECONDS = 5
 MAX_BUFFERED_CANDLES = 10_000
+
+# Reconnect backoff after an error: 1 s, ~2 s, ~4 s ... capped at 60 s, and
+# reset once a connection delivers messages again.
+RECONNECT_BASE_SECONDS = 1.0
+RECONNECT_CAP_SECONDS = 60.0
+
+
+def reconnect_delay(failures: int, jitter: bool = True) -> float:
+    """Delay before reconnect attempt number `failures` (1-based): exponential
+    with jitter applied inside the cap. The exponent is bounded so a very
+    long outage can never overflow the float."""
+    raw = RECONNECT_BASE_SECONDS * 2 ** min(max(failures - 1, 0), 16)
+    if jitter and failures > 1:
+        raw *= 0.8 + 0.4 * random.random()
+    return min(RECONNECT_CAP_SECONDS, raw)
+
+
+async def _pause(stop_event: asyncio.Event, seconds: float) -> None:
+    """Sleep up to `seconds`, returning early if the collector is stopped."""
+    try:
+        await asyncio.wait_for(stop_event.wait(), timeout=seconds)
+    except asyncio.TimeoutError:
+        pass
 
 
 def minutes_missing(last_open: datetime, now: datetime) -> int:
@@ -88,8 +112,10 @@ class LiveCollector:
     async def run(self, stop_event: asyncio.Event | None = None) -> None:
         stop_event = stop_event or asyncio.Event()
         url = stream_url(self.settings.binance_ws_url, self.settings.symbols)
+        failures = 0
         while not stop_event.is_set():
             conn = None
+            pause = 0.0
             try:
                 conn = self.connect_fn()
                 for symbol in self.settings.symbols:
@@ -102,6 +128,7 @@ class LiveCollector:
                             if stop_event.is_set():
                                 break
                             self._handle(json.loads(raw), conn)
+                            failures = 0  # messages flowing: connection healthy
                     finally:
                         flusher.cancel()
                         if self.book_buffer:
@@ -112,12 +139,27 @@ class LiveCollector:
                                 log.error("final book ticker flush failed: %s", exc)
             except asyncio.CancelledError:
                 raise
+            except RateLimitedError as exc:
+                # Binance told us to stop. Retrying early is how a 429
+                # becomes a 418 IP ban, so wait exactly what it asked for.
+                pause = exc.retry_after
+                log.critical(
+                    "live collector RATE LIMITED by Binance (HTTP %s): pausing "
+                    "%.0fs as instructed (Retry-After) before reconnecting; "
+                    "no requests until then", exc.status, exc.retry_after,
+                )
             except Exception as exc:
-                log.error("live collector error: %s; reconnecting in 5s", exc)
-                await asyncio.sleep(5)
+                failures += 1
+                pause = reconnect_delay(failures)
+                log.error("live collector error: %s; reconnecting in %.1fs "
+                          "(attempt %d)", exc, pause, failures)
             finally:
                 if conn is not None:
                     conn.close()
+            if pause and not stop_event.is_set():
+                # The DB connection is already closed: never hold it idle
+                # through a pause that can last as long as a rate-limit ban.
+                await _pause(stop_event, pause)
 
     def _handle(self, message: dict, conn) -> None:
         data = message.get("data", message)
