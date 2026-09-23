@@ -90,8 +90,8 @@ hand for history loaded before that existed, or after a backfill was
 interrupted (Ctrl+C):
 
 ```bash
-.venv\Scripts	b.exe db refresh-aggregates
-.venv\Scripts	b.exe db refresh-aggregates --from 2024-01-01
+.venv\Scripts\tb.exe db refresh-aggregates
+.venv\Scripts\tb.exe db refresh-aggregates --from 2024-01-01
 ```
 
 `tb quality --timeframe 1h` (or any non-1m timeframe) takes its expected
