@@ -79,18 +79,24 @@ def _month_bounds(year: int, month: int) -> tuple[datetime, datetime]:
 
 
 def backfill_symbol(conn, symbol: str, downloader, api: BinanceRest,
-                    until: datetime | None = None) -> int:
+                    until: datetime | None = None,
+                    start: datetime | None = None) -> int:
     """Load monthly archives, then daily archives, then the REST tail.
 
     Resumable: months already recorded as successful runs are skipped.
     Months that predate the symbol's listing 404 and are skipped quietly.
+
+    `start`, if given, moves the beginning of the monthly-archive loop
+    forward to max(start, the symbol's listing date) instead of always
+    starting from the listing date. Omitted, behavior is unchanged.
     """
     until = until or datetime.now(timezone.utc)
-    start = api.first_candle_time(symbol)
+    listed_at = api.first_candle_time(symbol)
+    loop_start = max(start, listed_at) if start else listed_at
     done = completed_periods(conn, "backfill", symbol)
     total = 0
 
-    for year, month in months_between(start, until):
+    for year, month in months_between(loop_start, until):
         m_start, m_end = _month_bounds(year, month)
         if (m_start, m_end) in done:
             continue
@@ -116,16 +122,19 @@ def backfill_symbol(conn, symbol: str, downloader, api: BinanceRest,
             finish_run(conn, run_id, "failed", 0, str(exc))
             log.error("%s %04d-%02d failed: %s", symbol, year, month, exc)
 
-    total += _backfill_tail(conn, symbol, downloader, api, until)
+    total += _backfill_tail(conn, symbol, downloader, api, until, loop_start)
     return total
 
 
-def _backfill_tail(conn, symbol: str, downloader, api, until: datetime) -> int:
+def _backfill_tail(conn, symbol: str, downloader, api, until: datetime,
+                   fallback_start: datetime | None = None) -> int:
     """Fill from the last stored candle to `until` using daily archives, then
     the REST API for whatever is too recent to be archived."""
     written = 0
     last = last_candle_time(conn, symbol)
-    cursor = (last + timedelta(minutes=1)) if last else api.first_candle_time(symbol)
+    cursor = (last + timedelta(minutes=1)) if last else (
+        fallback_start or api.first_candle_time(symbol)
+    )
 
     day = cursor.date()
     while day < until.date():

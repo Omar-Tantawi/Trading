@@ -156,6 +156,43 @@ class NoPriorCandlesApi:
         return rows
 
 
+def test_start_skips_months_before_it(db_conn):
+    """--from should move the monthly-archive loop's beginning forward,
+    so months before `start` are never even requested."""
+    upsert_symbol(db_conn, symbol="BTCUSDT")
+    dl = FakeDownloader({
+        (2024, 1): make_zip(CSV),
+        (2024, 2): make_zip(CSV),
+    })
+
+    written = backfill_symbol(
+        db_conn, "BTCUSDT", dl, FakeApi(),
+        until=datetime(2024, 3, 5, tzinfo=timezone.utc),
+        start=datetime(2024, 2, 1, tzinfo=timezone.utc),
+    )
+
+    assert written == 1
+    assert dl.calls == [("BTCUSDT", 2024, 2)], \
+        "January predates `start` and must never be requested"
+
+
+def test_start_is_ignored_when_it_predates_listing(db_conn):
+    """A `start` earlier than the symbol's own listing date changes nothing:
+    the loop still begins at the listing date (FakeApi.first_candle_time
+    returns 2024-01-01)."""
+    upsert_symbol(db_conn, symbol="BTCUSDT")
+    dl = FakeDownloader({(2024, 1): make_zip(CSV)})
+
+    written = backfill_symbol(
+        db_conn, "BTCUSDT", dl, FakeApi(),
+        until=datetime(2024, 2, 5, tzinfo=timezone.utc),
+        start=datetime(2020, 1, 1, tzinfo=timezone.utc),
+    )
+
+    assert written == 1
+    assert dl.calls == [("BTCUSDT", 2024, 1)]
+
+
 def test_tail_seeds_from_first_candle_time_when_nothing_is_loaded_yet(db_conn):
     """Regression test: a symbol with no candles at all, and whose only
     elapsed month is incomplete, must still backfill via the REST tail
