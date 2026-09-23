@@ -184,9 +184,17 @@ def quality(
     _setup_logging()
     settings = get_settings()
     targets = [symbol.upper()] if symbol else settings.symbols
+    failed = []
     with connect() as conn:
         for s in targets:
-            console.print(run_quality_checks(conn, s, timeframe).render())
+            report = run_quality_checks(conn, s, timeframe)
+            console.print(report.render())
+            if report.verdict == "FAIL":
+                failed.append(s)
+    if failed:
+        # Scripts and schedulers see a FAIL through the exit code.
+        console.print(f"[red]quality FAIL: {', '.join(failed)}[/red]")
+        raise typer.Exit(code=1)
 
 
 @app.command()

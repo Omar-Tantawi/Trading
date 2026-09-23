@@ -138,3 +138,43 @@ def test_backfill_aborts_entirely_on_rate_limit(monkeypatch):
     assert result.exit_code != 0
     assert "418" in result.output
     assert "300" in result.output
+
+
+def _quality_run(monkeypatch, verdicts: dict):
+    from data.quality.report import Report
+
+    class FakeConn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_checks(conn, symbol, timeframe):
+        return Report(symbol=symbol, timeframe=timeframe, checked_from=None,
+                      checked_to=None, total_candles=1, duplicates=0,
+                      invalid=0, missing=0, completeness_pct=100.0,
+                      verdict=verdicts[symbol])
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://x/y")
+    monkeypatch.setenv("SYMBOLS", ",".join(verdicts))
+    from data.config import get_settings
+    get_settings.cache_clear()
+    try:
+        with patch("data.cli.connect", return_value=FakeConn()), \
+             patch("data.cli.run_quality_checks", fake_checks):
+            return runner.invoke(app, ["quality"])
+    finally:
+        get_settings.cache_clear()
+
+
+def test_quality_exits_non_zero_when_any_symbol_fails(monkeypatch):
+    result = _quality_run(monkeypatch, {"BTCUSDT": "FAIL", "ETHUSDT": "PASS"})
+    assert result.exit_code != 0
+    assert "BTCUSDT" in result.output and "ETHUSDT" in result.output, \
+        "every symbol is still checked and printed"
+
+
+def test_quality_exits_zero_on_pass_and_warn(monkeypatch):
+    result = _quality_run(monkeypatch, {"BTCUSDT": "PASS", "ETHUSDT": "WARN"})
+    assert result.exit_code == 0, result.output
