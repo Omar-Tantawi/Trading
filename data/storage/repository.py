@@ -84,16 +84,32 @@ def upsert_candles(conn: psycopg.Connection, candles: Iterable[Candle]) -> int:
     return len(rows)
 
 
+BOOK_TICKER_COLUMNS = ("symbol", "ts", "bid_price", "bid_qty", "ask_price", "ask_qty")
+
+
 def upsert_book_ticker(conn: psycopg.Connection, rows: list[tuple]) -> int:
+    """Idempotent on (symbol, ts). A book ticker row is a point-in-time
+    observation, so on replay the first value recorded for an instant is
+    kept and later duplicates are silently dropped."""
     if not rows:
         return 0
+    cols = ", ".join(BOOK_TICKER_COLUMNS)
     with conn.cursor() as cur:
-        with cur.copy(
-            "COPY book_ticker (symbol, ts, bid_price, bid_qty, ask_price, ask_qty) "
-            "FROM STDIN"
-        ) as copy:
+        cur.execute(
+            "CREATE TEMP TABLE IF NOT EXISTS staging_book_ticker "
+            "(LIKE book_ticker INCLUDING DEFAULTS) ON COMMIT DROP"
+        )
+        cur.execute("TRUNCATE staging_book_ticker")
+        with cur.copy(f"COPY staging_book_ticker ({cols}) FROM STDIN") as copy:
             for r in rows:
                 copy.write_row(r)
+        cur.execute(
+            f"""
+            INSERT INTO book_ticker ({cols})
+            SELECT {cols} FROM staging_book_ticker
+            ON CONFLICT (symbol, ts) DO NOTHING
+            """
+        )
     conn.commit()
     return len(rows)
 

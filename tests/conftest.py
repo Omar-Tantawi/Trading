@@ -4,7 +4,11 @@ import pytest
 
 TEST_DSN = os.environ.get(
     "TEST_DATABASE_URL",
-    "postgresql://tb:tb_local_dev@localhost:5432/trading_buddy_test",
+    # Host port 5433, not the container's internal 5432: this machine also
+    # runs a native PostgreSQL 18 Windows service on 5432, which intercepts
+    # connections meant for the tb-timescaledb container. See docker-compose.yml
+    # and task-2-report.md for the full story.
+    "postgresql://tb:tb_local_dev@localhost:5433/trading_buddy_test",
 )
 
 

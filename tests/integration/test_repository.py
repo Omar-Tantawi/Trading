@@ -6,6 +6,7 @@ import pytest
 from data.storage.repository import (
     Candle,
     last_candle_time,
+    upsert_book_ticker,
     upsert_candles,
     upsert_symbol,
 )
@@ -85,3 +86,20 @@ def test_rejects_naive_datetime(db_conn):
     bad.open_time = bad.open_time.replace(tzinfo=None)
     with pytest.raises(ValueError, match="timezone-aware"):
         upsert_candles(db_conn, [bad])
+
+
+def test_upsert_book_ticker_is_idempotent(db_conn):
+    rows = [
+        ("BTCUSDT", T0, Decimal("42000.10000000"), Decimal("1.5"),
+         Decimal("42000.20000000"), Decimal("2.0")),
+        ("BTCUSDT", T0 + timedelta(seconds=1), Decimal("42001.10000000"),
+         Decimal("1.1"), Decimal("42001.30000000"), Decimal("0.9")),
+    ]
+
+    assert upsert_book_ticker(db_conn, rows) == 2
+    upsert_book_ticker(db_conn, rows)  # replay must not raise or duplicate
+
+    with db_conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM book_ticker")
+        (count,) = cur.fetchone()
+    assert count == 2
