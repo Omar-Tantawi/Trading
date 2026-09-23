@@ -108,3 +108,34 @@ def test_gap_fill_returns_zero_when_symbol_has_no_history(db_conn):
 
     collector = LiveCollector(api=ExplodingApi(), connect_fn=lambda: db_conn)
     assert collector.gap_fill(db_conn, "BTCUSDT") == 0
+
+
+class JustClosedApi:
+    """One long-closed candle, then one that closed only 0.5 s before the
+    test started: Binance may still revise it, and because rest outranks
+    ws the final ws version could never replace it."""
+
+    def __init__(self, first_open: datetime, t_before: datetime):
+        self.rows = [
+            _kline_row(first_open),
+            _kline_row(t_before - timedelta(seconds=60, milliseconds=500)),
+        ]
+
+    def klines(self, symbol, start_ms, limit=1000):
+        return [r for r in self.rows if r[0] >= start_ms]
+
+
+def test_gap_fill_does_not_store_a_candle_that_closed_under_two_seconds_ago(db_conn):
+    upsert_symbol(db_conn, symbol="BTCUSDT")
+    last_open = (datetime.now(timezone.utc) - timedelta(minutes=10)) \
+        .replace(second=0, microsecond=0)
+    upsert_candles(db_conn, [_archive_candle(last_open)])
+    t_before = datetime.now(timezone.utc)
+    api = JustClosedApi(last_open + timedelta(minutes=1), t_before)
+
+    collector = LiveCollector(api=api, connect_fn=lambda: db_conn)
+    assert collector.gap_fill(db_conn, "BTCUSDT") == 1
+
+    with db_conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM candles_1m WHERE source = 'rest'")
+        assert cur.fetchone()[0] == 1

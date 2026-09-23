@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import websockets
 
-from data.collectors.binance_rest import BinanceRest
+from data.collectors.binance_rest import REST_SETTLE, BinanceRest
 from data.collectors.binance_ws import (
     parse_book_ticker_message,
     parse_kline_message,
@@ -76,7 +76,9 @@ class LiveCollector:
                 )
                 for r in rows
             ]
-            candles = [c for c in candles if c.close_time < now]
+            # Closed, and settled for REST_SETTLE: a REST row stored while
+            # Binance can still revise it would outrank the final ws row.
+            candles = [c for c in candles if c.close_time < now - REST_SETTLE]
             if not candles:
                 break
             written += upsert_candles(conn, candles)

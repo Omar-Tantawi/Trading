@@ -392,3 +392,24 @@ def test_rerun_re_walks_the_months_daily_archives_and_upgrades_rest_rows(db_conn
                     (day2, day2 + timedelta(days=1)))
         assert dict(cur.fetchall()) == {"archive": 1440}
     assert _minutes(db_conn, "BTCUSDT", MAR1, UNTIL) == EXPECTED_MINUTES
+
+
+def test_backfill_tail_does_not_store_a_rest_candle_that_closed_under_two_seconds_ago(db_conn):
+    upsert_symbol(db_conn, symbol="BTCUSDT")
+    t_before = datetime.now(timezone.utc)
+    start = t_before.replace(second=0, microsecond=0) - timedelta(minutes=5)
+    rows = [_kline(start), _kline(start + timedelta(minutes=1)),
+            _kline(t_before - timedelta(seconds=60, milliseconds=500))]
+
+    class Api:
+        def first_candle_time(self, symbol):
+            return datetime(2017, 8, 17, tzinfo=timezone.utc)
+
+        def klines(self, symbol, start_ms, limit=1000):
+            return [r for r in rows if r[0] >= start_ms]
+
+    backfill_symbol(db_conn, "BTCUSDT", DailyDownloader({}), Api(), start=start)
+
+    with db_conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM candles_1m WHERE symbol = 'BTCUSDT'")
+        assert cur.fetchone()[0] == 2

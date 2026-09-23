@@ -7,7 +7,7 @@ from typing import Callable
 import httpx
 
 from data.collectors import archive
-from data.collectors.binance_rest import BinanceRest, backoff_delays
+from data.collectors.binance_rest import REST_SETTLE, BinanceRest, backoff_delays
 from data.storage.repository import (
     Candle,
     completed_periods,
@@ -210,9 +210,11 @@ def _backfill_tail(conn, symbol: str, downloader, api, until: datetime,
     Re-walking the month's daily archives on every run is idempotent and
     upgrades rest/ws rows to archive via the SQL source precedence.
     """
-    cutoff = until
+    # Only closed candles, and (for REST) only ones that closed at least
+    # REST_SETTLE ago in wall-clock time.
+    cutoff = min(until, datetime.now(timezone.utc) - REST_SETTLE)
     month_start = until.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    tail_start = max(loop_start, month_start)
+    tail_start = max(loop_start, month_start).replace(second=0, microsecond=0)
     tail_end = _closed_open_bound(cutoff)
     if tail_start >= tail_end:
         return 0

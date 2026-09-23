@@ -1,7 +1,7 @@
 import logging
 import random
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Callable
 
@@ -12,6 +12,12 @@ from data.config import get_settings
 log = logging.getLogger(__name__)
 
 RETRYABLE_STATUS = {500, 502, 503, 504}
+
+# A REST kline is accepted only once its close_time is at least this far in
+# the past. Binance can still revise a candle for a moment after it closes,
+# and because rest outranks ws in the source precedence, a REST row stored
+# too early could never be replaced by the final ws version.
+REST_SETTLE = timedelta(seconds=2)
 
 
 class RateLimitedError(Exception):
