@@ -8,7 +8,7 @@ from rich.console import Console
 from rich.table import Table
 
 from data.collectors.backfill import ArchiveDownloader, backfill_symbol
-from data.collectors.binance_rest import BinanceRest, parse_symbol_info
+from data.collectors.binance_rest import BinanceRest, RateLimitedError, parse_symbol_info
 from data.collectors.live import LiveCollector
 from data.config import get_settings
 from data.quality.checks import STEP, run_quality_checks
@@ -80,14 +80,47 @@ def backfill(
     downloader = ArchiveDownloader(settings.binance_data_url)
     failures = []
     with connect() as conn:
-        for s in targets:
+        for i, s in enumerate(targets):
             try:
                 written = backfill_symbol(conn, s, downloader, api, start=start)
                 console.print(f"{s}: {written:,} candles written")
+            except RateLimitedError as exc:
+                # A 429/418 means Binance itself is telling us to stop.
+                # Isolating this like an ordinary per-symbol failure would
+                # let the loop immediately call Binance again for the next
+                # symbol (e.g. first_candle_time), and requests made while
+                # banned can extend the ban. Abort the whole run instead;
+                # backfill is resumable, so re-running after retry_after
+                # has elapsed picks up exactly where this left off.
+                remaining = targets[i + 1:]
+                logging.getLogger(__name__).error(
+                    "%s: rate limited (HTTP %s), retry after %.0fs; "
+                    "aborting backfill; not yet processed: %s",
+                    s, exc.status, exc.retry_after, ", ".join(remaining) or "none",
+                )
+                console.print(
+                    f"[red]{s}: rate limited (HTTP {exc.status}); "
+                    f"retry after {exc.retry_after:.0f}s[/red]"
+                )
+                if remaining:
+                    console.print(
+                        f"[red]not yet processed: {', '.join(remaining)}[/red]"
+                    )
+                raise typer.Exit(code=1)
             except Exception as exc:
                 # One symbol's failure must not stop the others; the failure
                 # is still surfaced via logging, console output, and a
                 # non-zero exit code once every symbol has been attempted.
+                # Roll back first: an unguarded DB error inside
+                # backfill_symbol leaves this shared, non-autocommit
+                # connection's transaction aborted. Without a rollback, the
+                # next symbol's very first query on this same connection
+                # would raise InFailedSqlTransaction and be falsely reported
+                # as failed too, even though nothing is wrong with it.
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass  # a broken connection must not mask the original error
                 logging.getLogger(__name__).error(
                     "%s: backfill failed: %s", s, exc
                 )

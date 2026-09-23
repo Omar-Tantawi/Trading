@@ -4,6 +4,7 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from data.cli import app
+from data.collectors.binance_rest import RateLimitedError
 
 runner = CliRunner()
 
@@ -98,3 +99,42 @@ def test_backfill_isolates_per_symbol_failures(monkeypatch):
     assert calls == ["BTCUSDT", "ETHUSDT"], "ETHUSDT must still run after BTCUSDT fails"
     assert result.exit_code != 0
     assert "BTCUSDT" in result.output
+
+
+def test_backfill_aborts_entirely_on_rate_limit(monkeypatch):
+    """A 429/418 from Binance must stop the whole run immediately, unlike
+    an ordinary per-symbol failure. Isolating it would let the loop call
+    Binance again for the very next symbol (e.g. via first_candle_time)
+    while still banned, which can extend the ban."""
+
+    class FakeConn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    calls = []
+
+    def fake_backfill_symbol(conn, symbol, downloader, api, start=None):
+        calls.append(symbol)
+        if symbol == "BTCUSDT":
+            raise RateLimitedError(418, 300)
+        return 1
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://x/y")
+    monkeypatch.setenv("SYMBOLS", "BTCUSDT,ETHUSDT")
+    from data.config import get_settings
+    get_settings.cache_clear()
+
+    with patch("data.cli.connect", return_value=FakeConn()), \
+         patch("data.cli.ArchiveDownloader"), \
+         patch("data.cli.BinanceRest"), \
+         patch("data.cli.backfill_symbol", fake_backfill_symbol):
+        result = runner.invoke(app, ["backfill"])
+
+    get_settings.cache_clear()
+    assert calls == ["BTCUSDT"], "ETHUSDT must never be attempted after a rate limit"
+    assert result.exit_code != 0
+    assert "418" in result.output
+    assert "300" in result.output
