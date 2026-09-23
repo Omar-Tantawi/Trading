@@ -89,6 +89,13 @@ def _loaded_months(conn, symbol: str) -> set[datetime]:
         return {r[0] for r in cur.fetchall()}
 
 
+def _has_1m_rows(conn, symbol: str, gap) -> bool:
+    with conn.cursor() as cur:
+        cur.execute("SELECT EXISTS (SELECT 1 FROM candles_1m WHERE symbol = %s "
+                    "AND open_time >= %s AND open_time < %s)", (symbol, *gap))
+        return cur.fetchone()[0]
+
+
 def _gap_detail(gap, explained: bool) -> dict:
     g_start, g_end = gap
     return {"start": g_start.isoformat(), "end": g_end.isoformat(),
@@ -103,11 +110,23 @@ def run_quality_checks(conn, symbol: str, timeframe: str = "1m",
     step = STEP[timeframe]
     table = "candles_1m" if timeframe == "1m" else f"candles_{timeframe}"
     with conn.cursor() as cur:
-        cur.execute(
-            f"SELECT min(open_time), max(open_time), count(*) FROM {table} "
-            f"WHERE symbol = %s", (symbol,)
-        )
+        # The expected range always comes from the 1m truth, never from the
+        # aggregate itself: a view that holds only its policy's recent window
+        # must not get to define its own range and pass.
+        if timeframe == "1m":
+            cur.execute("SELECT min(open_time), max(open_time), count(*) "
+                        "FROM candles_1m WHERE symbol = %s", (symbol,))
+        else:
+            # First bucket touched by 1m data, through the last complete one.
+            cur.execute(
+                "SELECT time_bucket(%(step)s, min(open_time)), "
+                "time_bucket(%(step)s, max(open_time) + interval '1 minute') "
+                "- %(step)s, count(*) FROM candles_1m WHERE symbol = %(symbol)s",
+                {"step": step, "symbol": symbol},
+            )
         first, last, total = cur.fetchone()
+        if total and last < first:
+            total = 0  # 1m data exists, but not one complete bucket of it
         if not total:
             report = Report(symbol=symbol, timeframe=timeframe,
                             checked_from=None, checked_to=None,
@@ -139,9 +158,15 @@ def run_quality_checks(conn, symbol: str, timeframe: str = "1m",
 
     # Gaps via lag() in SQL (see find_gaps); only the gaps come back.
     gaps = find_gaps(conn, symbol, start, end + step, step=step, table=table)
+    # A missing bucket where 1m candles exist is an aggregate that disagrees
+    # with the 1m truth -- never an exchange outage, whatever the month.
+    aggregate_holes = ([g for g in gaps if _has_1m_rows(conn, symbol, g)]
+                       if timeframe != "1m" else [])
     explained, unexplained = classify_gaps(
-        gaps, _loaded_months(conn, symbol), known_outages
+        [g for g in gaps if g not in aggregate_holes],
+        _loaded_months(conn, symbol), known_outages,
     )
+    unexplained = sorted(unexplained + aggregate_holes)
     missing = sum(int((g_end - g_start) / step) for g_start, g_end in unexplained)
     explained_missing = sum(int((g_end - g_start) / step)
                             for g_start, g_end in explained)
@@ -168,6 +193,7 @@ def run_quality_checks(conn, symbol: str, timeframe: str = "1m",
             "out_of_order": out_of_order,
             "gap_count": len(gaps),
             "unexplained_gap_count": len(unexplained),
+            "aggregate_holes": len(aggregate_holes),
             "explained_missing": explained_missing,
             "longest_unexplained_minutes": int(longest.total_seconds() // 60),
             "largest_gaps": [_gap_detail(g, ex) for g, ex in ranked[:10]],

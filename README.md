@@ -80,12 +80,29 @@ and takes a while. It is resumable: stop it with Ctrl+C and re-run.
   still run. The command prints and logs each failure and exits non-zero
   if any symbol failed, so a partial failure is never silent.
 
+### Higher timeframes (`tb db refresh-aggregates`)
+
+5m/15m/1h/4h/1d are TimescaleDB continuous aggregates over `candles_1m`.
+Their scheduled refresh policies only reach back 3 days (5m) to 365 days
+(1d), so older history reaches them only through an explicit refresh.
+`tb backfill` does that automatically for every range it writes. Run it by
+hand for history loaded before that existed, or after a backfill was
+interrupted (Ctrl+C):
+
+```bash
+.venv\Scripts	b.exe db refresh-aggregates
+.venv\Scripts	b.exe db refresh-aggregates --from 2024-01-01
+```
+
+`tb quality --timeframe 1h` (or any non-1m timeframe) takes its expected
+range from `candles_1m`, so an aggregate that is missing history FAILs.
+
 ## Facts worth knowing
 
 - All timestamps are UTC. All prices are `Decimal`, never `float`.
 - Only **closed** candles are stored. A forming candle is never written.
-- `candles_1m` is the only source of truth; 5m/15m/1h/4h/1d are derived by
-  TimescaleDB and cannot disagree with it.
+- `candles_1m` is the only source of truth; 5m/15m/1h/4h/1d are derived
+  from it by TimescaleDB (see `tb db refresh-aggregates` above).
 - Source precedence is `archive` > `rest` > `ws`; a lower source never
   overwrites a higher one.
 - `assert_trainable()` in `data/quality/checks.py` is the gate every future

@@ -13,6 +13,7 @@ from data.storage.repository import (
     completed_periods,
     find_gaps,
     finish_run,
+    refresh_aggregates,
     start_run,
     upsert_candles,
 )
@@ -98,6 +99,22 @@ class ArchiveDownloader:
                                     checksum_may_lag=True)
 
 
+class _WrittenSpan:
+    """The 1m range [start, end) a backfill actually wrote."""
+
+    def __init__(self):
+        self.start: datetime | None = None
+        self.end: datetime | None = None
+
+    def add(self, candles: list[Candle]) -> None:
+        if not candles:
+            return
+        lo = min(c.open_time for c in candles)
+        hi = max(c.open_time for c in candles) + timedelta(minutes=1)
+        self.start = lo if self.start is None else min(self.start, lo)
+        self.end = hi if self.end is None else max(self.end, hi)
+
+
 def _month_bounds(year: int, month: int) -> tuple[datetime, datetime]:
     start = datetime(year, month, 1, tzinfo=timezone.utc)
     end = (datetime(year + 1, 1, 1, tzinfo=timezone.utc) if month == 12
@@ -116,7 +133,38 @@ def backfill_symbol(conn, symbol: str, downloader, api: BinanceRest,
     `start`, if given, moves the beginning of the monthly-archive loop
     forward to max(start, the symbol's listing date) instead of always
     starting from the listing date. Omitted, behavior is unchanged.
+
+    Afterwards all five continuous aggregates are refreshed over the range
+    actually written (see refresh_aggregates) -- also when the backfill
+    fails part-way, so whatever did land reaches the higher timeframes.
     """
+    span = _WrittenSpan()
+    try:
+        total = _backfill(conn, symbol, downloader, api, until, start, span)
+    except BaseException:
+        if span.start is not None:
+            # Release the (possibly aborted) transaction first: its locks
+            # could otherwise block the refresh on the other connection.
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            try:
+                log.info("%s: refreshing aggregates over what was written "
+                         "before the failure", symbol)
+                refresh_aggregates(conn, span.start, span.end)
+            except Exception as exc:
+                log.error("%s: aggregate refresh after failure also failed "
+                          "(run `tb db refresh-aggregates`): %s", symbol, exc)
+        raise
+    if span.start is not None:
+        conn.commit()  # end any read transaction before the refresh
+        refresh_aggregates(conn, span.start, span.end)
+    return total
+
+
+def _backfill(conn, symbol: str, downloader, api, until: datetime | None,
+              start: datetime | None, span: _WrittenSpan) -> int:
     until = until or datetime.now(timezone.utc)
     listed_at = api.first_candle_time(symbol)
     loop_start = max(start, listed_at) if start else listed_at
@@ -144,6 +192,7 @@ def backfill_symbol(conn, symbol: str, downloader, api: BinanceRest,
                 continue
             candles = archive.rows_from_zip(blob, symbol)
             written = upsert_candles(conn, candles)
+            span.add(candles)
             finish_run(conn, run_id, "success", written)
             total += written
             log.info("%s %04d-%02d: %d candles", symbol, year, month, written)
@@ -155,7 +204,7 @@ def backfill_symbol(conn, symbol: str, downloader, api: BinanceRest,
             finish_run(conn, run_id, "failed", 0, str(exc))
             log.error("%s %04d-%02d failed: %s", symbol, year, month, exc)
 
-    total += _backfill_tail(conn, symbol, downloader, api, until, loop_start)
+    total += _backfill_tail(conn, symbol, downloader, api, until, loop_start, span)
     return total
 
 
@@ -181,7 +230,7 @@ def _rest_candle(symbol: str, r: list) -> Candle:
 
 
 def _rest_fill(conn, symbol: str, api, gap_start: datetime, gap_end: datetime,
-               cutoff: datetime) -> int:
+               cutoff: datetime, span: _WrittenSpan) -> int:
     """Fill [gap_start, gap_end) from REST, 1000 candles per call."""
     written = 0
     cursor = gap_start
@@ -195,12 +244,13 @@ def _rest_fill(conn, symbol: str, api, gap_start: datetime, gap_end: datetime,
         if not candles:
             break  # nothing exists in the rest of this gap on the exchange
         written += upsert_candles(conn, candles)
+        span.add(candles)
         cursor = candles[-1].open_time + timedelta(minutes=1)
     return written
 
 
 def _backfill_tail(conn, symbol: str, downloader, api, until: datetime,
-                   loop_start: datetime) -> int:
+                   loop_start: datetime, span: _WrittenSpan) -> int:
     """Complete the current (incomplete) month: re-walk its daily archives,
     then REST-fill every gap that remains in [tail_start, until).
 
@@ -227,12 +277,13 @@ def _backfill_tail(conn, symbol: str, downloader, api, until: datetime,
             candles = [c for c in archive.rows_from_zip(blob, symbol)
                        if tail_start <= c.open_time < tail_end]
             written += upsert_candles(conn, candles)
+            span.add(candles)
         day += timedelta(days=1)
 
     gaps = find_gaps(conn, symbol, tail_start, tail_end)
     conn.commit()  # end the read transaction; nothing may hold locks idle
     for gap_start, gap_end in gaps:
-        filled = _rest_fill(conn, symbol, api, gap_start, gap_end, cutoff)
+        filled = _rest_fill(conn, symbol, api, gap_start, gap_end, cutoff, span)
         log.info("%s: REST gap %s -> %s: %d candles",
                  symbol, gap_start, gap_end, filled)
         written += filled

@@ -53,3 +53,50 @@ def test_db_error_in_one_symbol_does_not_poison_the_next(monkeypatch, migrated_d
     assert "BTCUSDT: backfill failed" in result.output
     assert "ETHUSDT: 1 candles written" in result.output
     assert "ETHUSDT: backfill failed" not in result.output
+
+
+def test_db_refresh_aggregates_materializes_existing_history(migrated_db):
+    """Existing 1m history that no policy window reaches (the smoke run's
+    SOLUSDT data) is materialized on demand by `tb db refresh-aggregates`."""
+    from datetime import datetime, timedelta, timezone
+    from decimal import Decimal
+
+    from data.storage.repository import Candle, upsert_candles, upsert_symbol
+
+    t0 = datetime(2022, 3, 1, tzinfo=timezone.utc)
+    conn = real_connect(migrated_db)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM candles_1m WHERE symbol = 'SOLUSDT'")
+        conn.commit()
+        upsert_symbol(conn, symbol="SOLUSDT")
+        upsert_candles(conn, [
+            Candle(symbol="SOLUSDT", open_time=t0 + timedelta(minutes=i),
+                   close_time=t0 + timedelta(minutes=i, seconds=59, milliseconds=999),
+                   open=Decimal("100"), high=Decimal("101"), low=Decimal("99"),
+                   close=Decimal("100.5"), volume=Decimal("1"),
+                   quote_volume=Decimal("100"), trade_count=1,
+                   taker_buy_base=Decimal("0.5"), taker_buy_quote=Decimal("50"),
+                   source="archive")
+            for i in range(1440)
+        ])
+
+        from data.config import get_settings
+        get_settings.cache_clear()
+        result = runner.invoke(app, ["db", "refresh-aggregates"])
+        get_settings.cache_clear()
+        assert result.exit_code == 0, result.output
+
+        counts = {}
+        with conn.cursor() as cur:
+            for tf in ("5m", "15m", "1h", "4h", "1d"):
+                cur.execute(f"SELECT count(*) FROM candles_{tf} WHERE symbol = "
+                            "'SOLUSDT' AND open_time >= %s AND open_time < %s",
+                            (t0, t0 + timedelta(days=1)))
+                counts[tf] = cur.fetchone()[0]
+        assert counts == {"5m": 288, "15m": 96, "1h": 24, "4h": 6, "1d": 1}
+    finally:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM candles_1m WHERE symbol = 'SOLUSDT'")
+        conn.commit()
+        conn.close()

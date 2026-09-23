@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import typer
 from rich.console import Console
@@ -13,7 +13,7 @@ from data.collectors.live import LiveCollector
 from data.config import get_settings
 from data.quality.checks import STEP, run_quality_checks
 from data.storage.db import connect, run_migrations
-from data.storage.repository import last_candle_time, upsert_symbol
+from data.storage.repository import last_candle_time, refresh_aggregates, upsert_symbol
 
 app = typer.Typer(help="AI Trading Buddy data foundation")
 db_app = typer.Typer(help="Database maintenance")
@@ -47,6 +47,35 @@ def db_upgrade():
     _setup_logging()
     applied = run_migrations()
     console.print(f"applied: {applied or 'nothing new'}")
+
+
+@db_app.command("refresh-aggregates")
+def db_refresh_aggregates(
+    from_: str = typer.Option(
+        None, "--from", help="Start date YYYY-MM-DD (UTC); default is the "
+        "earliest stored 1m candle"
+    ),
+):
+    """Materialize 5m/15m/1h/4h/1d over the stored 1m history.
+
+    The refresh policies only reach back 3-365 days. `tb backfill` refreshes
+    what it writes; use this for history loaded before that existed, or
+    after an interrupted backfill.
+    """
+    start = _parse_from_date(from_) if from_ else None
+    _setup_logging()
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT min(open_time), max(open_time) FROM candles_1m")
+            first, last = cur.fetchone()
+        conn.commit()  # end the read transaction before the refresh
+        if first is None:
+            console.print("no 1m candles stored; nothing to refresh")
+            return
+        start = max(start, first) if start else first
+        views = refresh_aggregates(conn, start, last + timedelta(minutes=1))
+    console.print(f"refreshed {', '.join(views) or 'nothing'} over "
+                  f"{start:%Y-%m-%d %H:%M} .. {last:%Y-%m-%d %H:%M} UTC")
 
 
 @symbols_app.command("sync")

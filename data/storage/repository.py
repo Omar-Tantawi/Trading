@@ -1,9 +1,13 @@
+import logging
+import time
 from dataclasses import dataclass, fields
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Iterable
 
 import psycopg
+
+log = logging.getLogger(__name__)
 
 CANDLE_COLUMNS = (
     "symbol", "open_time", "close_time", "open", "high", "low", "close",
@@ -213,3 +217,60 @@ def completed_periods(conn, component: str, symbol: str) -> set[tuple]:
             (component, symbol),
         )
         return {(r[0], r[1]) for r in cur.fetchall()}
+
+
+# Continuous aggregates over candles_1m, with their bucket widths.
+AGGREGATE_STEPS = {
+    "candles_5m": timedelta(minutes=5),
+    "candles_15m": timedelta(minutes=15),
+    "candles_1h": timedelta(hours=1),
+    "candles_4h": timedelta(hours=4),
+    "candles_1d": timedelta(days=1),
+}
+# Every bucket width divides a day, and TimescaleDB's default bucket origin
+# is a UTC midnight, so buckets align to multiples of the width from here.
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _floor(t: datetime, step: timedelta) -> datetime:
+    return _EPOCH + ((t - _EPOCH) // step) * step
+
+
+def _ceil(t: datetime, step: timedelta) -> datetime:
+    floor = _floor(t, step)
+    return floor if floor == t else floor + step
+
+
+def refresh_aggregates(conn, start: datetime, end: datetime,
+                       now: datetime | None = None) -> list[str]:
+    """Refresh all five continuous aggregates over the 1m range [start, end).
+
+    The refresh policies only reach back their start_offset (3 days for 5m,
+    up to 365 days for 1d), so history loaded or overwritten further back
+    never reaches the higher timeframes on its own. This is the explicit
+    refresh that does.
+
+    Runs on a separate autocommit connection to the same database as
+    `conn` (TimescaleDB refuses to refresh inside a transaction block).
+    Each view's window is widened to whole buckets, but never past the
+    bucket still forming at `now`: that one is left to the policies.
+    Returns the views refreshed.
+    """
+    _check_aware(start, "start")
+    _check_aware(end, "end")
+    now = now or datetime.now(timezone.utc)
+    refreshed = []
+    with psycopg.connect(**conn.info.get_parameters(),
+                         password=conn.info.password, autocommit=True) as ac:
+        for view, step in AGGREGATE_STEPS.items():
+            w_start = _floor(start, step)
+            w_end = min(_ceil(end, step), _floor(now, step))
+            if w_end - w_start < step:
+                continue  # not one complete bucket to refresh yet
+            began = time.monotonic()
+            ac.execute("CALL refresh_continuous_aggregate(%s, %s, %s)",
+                       (view, w_start, w_end))
+            log.info("refreshed %s over [%s, %s) in %.1fs",
+                     view, w_start, w_end, time.monotonic() - began)
+            refreshed.append(view)
+    return refreshed

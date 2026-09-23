@@ -261,3 +261,37 @@ def test_render_shows_where_the_largest_gaps_are(db_conn):
     assert f"{gap_start:%Y-%m-%d %H:%M}" in text
     assert f"{gap_end:%Y-%m-%d %H:%M}" in text
     assert "UNEXPLAINED" in text
+
+
+def test_a_timeframe_check_takes_its_range_from_the_1m_truth(db_conn, autocommit_conn):
+    """candles_1h held only its policy's recent window, yet `tb quality
+    --timeframe 1h` took first/last from the view itself and passed. The
+    expected range must come from candles_1m, and a missing bucket where
+    1m rows exist is never an exchange outage, even in a loaded month."""
+    t0 = datetime(2022, 2, 1, tzinfo=timezone.utc)
+    with autocommit_conn.cursor() as cur:  # clear rows left by earlier runs
+        cur.execute("CALL refresh_continuous_aggregate('candles_1h', %s, %s)",
+                    (t0, t0 + timedelta(days=2)))
+    upsert_symbol(db_conn, symbol="SOLUSDT")
+    upsert_candles(db_conn, [candle(i, symbol="SOLUSDT",
+                                    open_time=t0 + timedelta(minutes=i),
+                                    close_time=t0 + timedelta(minutes=i, seconds=59))
+                             for i in range(2 * 1440)])
+    _record_month_for(db_conn, "SOLUSDT", t0)
+    with autocommit_conn.cursor() as cur:  # only day 2 ever materialized
+        cur.execute("CALL refresh_continuous_aggregate('candles_1h', %s, %s)",
+                    (t0 + timedelta(days=1), t0 + timedelta(days=2)))
+
+    report = run_quality_checks(db_conn, "SOLUSDT", "1h")
+
+    assert report.checked_from == t0
+    assert report.missing == 24
+    assert report.verdict == "FAIL"
+
+
+def _record_month_for(conn, symbol, month_start):
+    from data.storage.repository import finish_run, start_run
+
+    run_id = start_run(conn, "backfill", symbol, month_start,
+                       month_start.replace(month=month_start.month + 1))
+    finish_run(conn, run_id, "success", 40320)
