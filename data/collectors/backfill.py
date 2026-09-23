@@ -109,6 +109,10 @@ def backfill_symbol(conn, symbol: str, downloader, api: BinanceRest,
             total += written
             log.info("%s %04d-%02d: %d candles", symbol, year, month, written)
         except Exception as exc:
+            # A DB-level failure inside upsert_candles leaves the connection's
+            # transaction aborted; without a rollback, finish_run's own UPDATE
+            # would raise InFailedSqlTransaction and abort the whole backfill.
+            conn.rollback()
             finish_run(conn, run_id, "failed", 0, str(exc))
             log.error("%s %04d-%02d failed: %s", symbol, year, month, exc)
 
@@ -121,9 +125,7 @@ def _backfill_tail(conn, symbol: str, downloader, api, until: datetime) -> int:
     the REST API for whatever is too recent to be archived."""
     written = 0
     last = last_candle_time(conn, symbol)
-    cursor = (last + timedelta(minutes=1)) if last else None
-    if cursor is None:
-        return 0
+    cursor = (last + timedelta(minutes=1)) if last else api.first_candle_time(symbol)
 
     day = cursor.date()
     while day < until.date():

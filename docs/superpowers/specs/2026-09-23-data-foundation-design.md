@@ -47,6 +47,7 @@ design, implementation plan and build cycle.
 | **1** | **Data foundation (this document)** | 5-8, 105 |
 | 2 | Market intelligence: indicators, trend, volatility, volume, candles, S/R, patterns, regime | 9-17, 106 |
 | 3 | Prediction ML: labels, baselines, XGBoost, walk-forward, calibration | 18-23, 30-33, 107 |
+| 3.5 | **Minimal read-only dashboard** (user-approved 2026-09-23): candlestick charts of collected data plus model accuracy and calibration. Exists so the data and the model can be *seen* rather than read about in summaries. Small and deliberately unpolished; sub-project 9 builds the real thing | 85, 87 (partial) |
 | 4 | Backtesting and financial evaluation | 28-29, 108 |
 | 5 | Signals, risk, position sizing, portfolio | 24-27, 109 |
 | 6 | Binance bot monitoring | 51-58, 110 |
