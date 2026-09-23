@@ -115,3 +115,34 @@ def test_symbol_metadata_extracts_filters():
     assert info["step_size"] == Decimal("0.00001")
     assert info["min_notional"] == Decimal("5")
     assert info["status"] == "TRADING"
+
+
+@respx.mock
+def test_timeout_is_retried_then_succeeds():
+    # Spec section 6: an HTTP timeout is retried with backoff, not raised
+    # on the first occurrence.
+    route = respx.get(f"{BASE}/api/v3/ping").mock(
+        side_effect=[
+            httpx.ReadTimeout("read timed out"),
+            httpx.ConnectError("connection refused"),
+            httpx.Response(200, json={"ok": True}),
+        ]
+    )
+    sleeps: list[float] = []
+    api = BinanceRest(base_url=BASE, sleep=sleeps.append)
+    assert api.get("/api/v3/ping", {}) == {"ok": True}
+    assert route.call_count == 3
+    assert len(sleeps) == 2
+
+
+@respx.mock
+def test_persistent_transport_error_raises_after_all_attempts_without_final_sleep():
+    route = respx.get(f"{BASE}/api/v3/ping").mock(
+        side_effect=httpx.ConnectTimeout("connect timed out")
+    )
+    sleeps: list[float] = []
+    api = BinanceRest(base_url=BASE, sleep=sleeps.append, attempts=3)
+    with pytest.raises(httpx.TransportError):
+        api.get("/api/v3/ping", {})
+    assert route.call_count == 3
+    assert len(sleeps) == 2

@@ -38,18 +38,37 @@ class ArchiveDownloader:
         self.attempts = attempts
 
     def _get(self, url: str) -> bytes | None:
-        """Returns the body, or None for 404 (which means 'does not exist')."""
-        for delay in backoff_delays(self.attempts):
-            resp = self.client.get(url)
+        """Returns the body, or None for 404 (which means 'does not exist').
+
+        5xx responses and transport errors (timeouts, refused or dropped
+        connections) are retried with backoff. There is no sleep after the
+        final attempt: nothing follows it.
+        """
+        delays = backoff_delays(self.attempts)
+        last_problem: object = None
+        for attempt, delay in enumerate(delays):
+            more_attempts = attempt < len(delays) - 1
+            try:
+                resp = self.client.get(url)
+            except httpx.TransportError as exc:
+                last_problem = exc
+                if more_attempts:
+                    log.warning("%s -> %s, retrying in %.1fs",
+                                url, type(exc).__name__, delay)
+                    self.sleep(delay)
+                continue
             if resp.status_code == 404:
                 return None
             if resp.status_code >= 500:
-                log.warning("%s -> %s, retrying in %.1fs", url, resp.status_code, delay)
-                self.sleep(delay)
+                last_problem = f"HTTP {resp.status_code}"
+                if more_attempts:
+                    log.warning("%s -> %s, retrying in %.1fs",
+                                url, resp.status_code, delay)
+                    self.sleep(delay)
                 continue
             resp.raise_for_status()
             return resp.content
-        raise RuntimeError(f"gave up downloading {url}")
+        raise RuntimeError(f"gave up downloading {url}: {last_problem}")
 
     def _fetch_verified(self, url: str) -> bytes | None:
         blob = self._get(url)

@@ -51,7 +51,18 @@ class BinanceRest:
         delays = backoff_delays(self.attempts)
         last_exc: Exception | None = None
         for attempt, delay in enumerate(delays):
-            resp = self.client.get(self.base_url + path, params=params)
+            more_attempts = attempt < len(delays) - 1
+            try:
+                resp = self.client.get(self.base_url + path, params=params)
+            except httpx.TransportError as exc:
+                # Timeouts, refused connections, dropped sockets: transient
+                # by nature, so they get the same backoff as a 5xx.
+                last_exc = exc
+                if more_attempts:
+                    log.warning("binance %s -> %s, retrying in %.1fs",
+                                path, type(exc).__name__, delay)
+                    self.sleep(delay)
+                continue
             if resp.status_code in (429, 418):
                 # 418 means we are already banned: never retry into a ban.
                 retry_after = float(resp.headers.get("Retry-After", 60))
@@ -60,7 +71,7 @@ class BinanceRest:
                 last_exc = httpx.HTTPStatusError(
                     f"HTTP {resp.status_code}", request=resp.request, response=resp
                 )
-                if attempt < len(delays) - 1:
+                if more_attempts:
                     # Only sleep if another attempt follows; sleeping before
                     # giving up on the last attempt is pure wasted latency.
                     log.warning("binance %s -> %s, retrying in %.1fs",
