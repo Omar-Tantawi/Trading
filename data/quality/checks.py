@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from data.quality.report import Report
+from data.storage.repository import find_gaps
 
 STEP = {"1m": timedelta(minutes=1), "5m": timedelta(minutes=5),
         "15m": timedelta(minutes=15), "1h": timedelta(hours=1),
@@ -16,29 +17,14 @@ class DataQualityError(Exception):
     pass
 
 
-def find_invalid(rows: list[dict]) -> list[dict]:
-    """Rows that violate the arithmetic every candle must satisfy."""
-    bad = []
-    for r in rows:
-        o, h, l, c = r["open"], r["high"], r["low"], r["close"]
-        if h < l or h < o or h < c or l > o or l > c:
-            bad.append(r)
-        elif r["volume"] is None or r["volume"] < 0:
-            bad.append(r)
-        elif r.get("trade_count") is not None and r["trade_count"] < 0:
-            bad.append(r)
-        elif any(v is None for v in (o, h, l, c)):
-            bad.append(r)
-    return bad
-
-
-def find_gaps(times: list[datetime], step: timedelta) -> list[tuple[datetime, datetime]]:
-    """Ranges [gap_start, next_present) where candles are missing."""
-    gaps = []
-    for prev, nxt in zip(times, times[1:]):
-        if nxt - prev > step:
-            gaps.append((prev + step, nxt))
-    return gaps
+# Every candle must satisfy this arithmetic; a row matching the predicate is
+# invalid. Evaluated in SQL so the history never has to come into Python.
+INVALID_PREDICATE = """
+    open IS NULL OR high IS NULL OR low IS NULL OR close IS NULL
+    OR volume IS NULL OR volume < 0 OR trade_count < 0
+    OR high < low OR high < open OR high < close
+    OR low > open OR low > close
+"""
 
 
 def subtract_known_outages(gaps, outages) -> list[tuple[datetime, datetime]]:
@@ -84,13 +70,15 @@ def run_quality_checks(conn, symbol: str, timeframe: str = "1m",
 
         start = start or first
         end = end or last
+        # Counts, invalid rows and non-unique timestamps in one SQL pass;
+        # only three integers come back to Python, never the candles.
         cur.execute(
-            f"SELECT open_time, open, high, low, close, volume, trade_count "
-            f"FROM {table} WHERE symbol = %s AND open_time BETWEEN %s AND %s "
-            f"ORDER BY open_time", (symbol, start, end)
+            f"SELECT count(*), count(*) FILTER (WHERE {INVALID_PREDICATE}), "
+            f"count(*) - count(DISTINCT open_time) "
+            f"FROM {table} WHERE symbol = %s AND open_time BETWEEN %s AND %s",
+            (symbol, start, end),
         )
-        cols = [d.name for d in cur.description]
-        rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+        in_range, invalid, out_of_order = cur.fetchone()
 
         # The primary key makes duplicates impossible in candles_1m; this
         # check exists so a future schema change cannot silently allow them.
@@ -100,13 +88,11 @@ def run_quality_checks(conn, symbol: str, timeframe: str = "1m",
         )
         duplicates = cur.fetchone()[0]
 
-    times = [r["open_time"] for r in rows]
-    out_of_order = sum(1 for a, b in zip(times, times[1:]) if b <= a)
-    gaps = find_gaps(times, step)
+    # Gaps via lag() in SQL (see find_gaps); only the gaps come back.
+    gaps = find_gaps(conn, symbol, start, end + step, step=step, table=table)
     if known_outages:
         gaps = subtract_known_outages(gaps, known_outages)
     missing = sum(int((g_end - g_start) / step) for g_start, g_end in gaps)
-    invalid = len(find_invalid(rows))
 
     expected = int((end - start) / step) + 1
     completeness = 100.0 * (expected - missing) / expected if expected else 0.0
@@ -114,7 +100,7 @@ def run_quality_checks(conn, symbol: str, timeframe: str = "1m",
 
     report = Report(
         symbol=symbol, timeframe=timeframe, checked_from=start, checked_to=end,
-        total_candles=len(rows), duplicates=duplicates, invalid=invalid,
+        total_candles=in_range, duplicates=duplicates, invalid=invalid,
         missing=missing, completeness_pct=round(completeness, 6),
         verdict=verdict,
         details={
