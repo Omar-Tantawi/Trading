@@ -80,3 +80,22 @@ def test_report_is_stored(db_conn):
     with db_conn.cursor() as cur:
         cur.execute("SELECT symbol, verdict FROM data_quality_reports")
         assert cur.fetchone()[0] == "BTCUSDT"
+
+
+def test_no_data_fails_loudly_and_is_stored(db_conn):
+    upsert_symbol(db_conn, symbol="BTCUSDT")
+
+    report = run_quality_checks(db_conn, "BTCUSDT")
+    assert report.verdict == "FAIL"
+    assert report.total_candles == 0
+    assert report.details["reason"] == "no data"
+
+    with db_conn.cursor() as cur:
+        cur.execute(
+            "SELECT verdict FROM data_quality_reports WHERE symbol = %s",
+            ("BTCUSDT",),
+        )
+        assert cur.fetchone()[0] == "FAIL"
+
+    with pytest.raises(DataQualityError, match="refusing to train"):
+        assert_trainable(db_conn, ["BTCUSDT"])
