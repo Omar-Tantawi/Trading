@@ -77,3 +77,29 @@ def test_archive_download_gives_up_on_persistent_transport_error():
         dl._get(url)
     assert route.call_count == 3
     assert len(sleeps) == 2
+
+
+@respx.mock
+def test_daily_archive_without_published_checksum_is_not_yet_available():
+    """Binance publishes a day's .CHECKSUM some time after its zip. Until
+    then the day is simply not available yet (REST covers it); it must not
+    raise and fail the whole symbol."""
+    from datetime import date
+
+    url = f"{BASE}/data/spot/daily/klines/BTCUSDT/1m/BTCUSDT-1m-2024-03-02.zip"
+    respx.get(url).mock(return_value=httpx.Response(200, content=b"payload"))
+    respx.get(url + ".CHECKSUM").mock(return_value=httpx.Response(404))
+    dl = ArchiveDownloader(BASE, sleep=lambda _: None)
+
+    assert dl.fetch_day("BTCUSDT", date(2024, 3, 2)) is None
+
+
+@respx.mock
+def test_monthly_archive_without_checksum_still_refuses_to_load():
+    url = f"{BASE}/data/spot/monthly/klines/BTCUSDT/1m/BTCUSDT-1m-2024-01.zip"
+    respx.get(url).mock(return_value=httpx.Response(200, content=b"payload"))
+    respx.get(url + ".CHECKSUM").mock(return_value=httpx.Response(404))
+    dl = ArchiveDownloader(BASE, sleep=lambda _: None)
+
+    with pytest.raises(ValueError, match="no checksum"):
+        dl.fetch_month("BTCUSDT", 2024, 1)

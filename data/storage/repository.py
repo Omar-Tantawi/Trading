@@ -1,5 +1,5 @@
 from dataclasses import dataclass, fields
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Iterable
 
@@ -120,6 +120,49 @@ def last_candle_time(conn: psycopg.Connection, symbol: str) -> datetime | None:
             "SELECT max(open_time) FROM candles_1m WHERE symbol = %s", (symbol,)
         )
         return cur.fetchone()[0]
+
+
+CANDLE_TABLES = {"candles_1m", "candles_5m", "candles_15m", "candles_1h",
+                 "candles_4h", "candles_1d"}
+
+
+def find_gaps(conn, symbol: str, start: datetime, end: datetime,
+              step: timedelta = timedelta(minutes=1),
+              table: str = "candles_1m") -> list[tuple[datetime, datetime]]:
+    """Missing ranges [gap_start, gap_end) among the open_times expected at
+    every `step` in [start, end). Computed in SQL with lag(), so only the
+    gaps -- never the candles -- come back to Python.
+
+    Two sentinels (start - step and end) make a missing head or tail of the
+    range show up as a gap too.
+    """
+    if table not in CANDLE_TABLES:
+        raise ValueError(f"unknown candle table {table!r}")
+    _check_aware(start, "start")
+    _check_aware(end, "end")
+    if end <= start:
+        return []
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            WITH t AS (
+                SELECT open_time FROM {table}
+                 WHERE symbol = %(symbol)s
+                   AND open_time >= %(start)s AND open_time < %(end)s
+                UNION ALL SELECT %(before)s::timestamptz
+                UNION ALL SELECT %(end)s::timestamptz
+            )
+            SELECT prev + %(step)s, open_time
+              FROM (SELECT open_time,
+                           lag(open_time) OVER (ORDER BY open_time) AS prev
+                      FROM t) l
+             WHERE open_time - prev > %(step)s
+             ORDER BY 1
+            """,
+            {"symbol": symbol, "start": start, "end": end,
+             "before": start - step, "step": step},
+        )
+        return [(r[0], r[1]) for r in cur.fetchall()]
 
 
 def get_candles(conn, symbol: str, timeframe: str, start: datetime,

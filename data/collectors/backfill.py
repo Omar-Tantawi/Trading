@@ -11,8 +11,8 @@ from data.collectors.binance_rest import BinanceRest, backoff_delays
 from data.storage.repository import (
     Candle,
     completed_periods,
+    find_gaps,
     finish_run,
-    last_candle_time,
     start_run,
     upsert_candles,
 )
@@ -70,12 +70,19 @@ class ArchiveDownloader:
             return resp.content
         raise RuntimeError(f"gave up downloading {url}: {last_problem}")
 
-    def _fetch_verified(self, url: str) -> bytes | None:
+    def _fetch_verified(self, url: str,
+                        checksum_may_lag: bool = False) -> bytes | None:
         blob = self._get(url)
         if blob is None:
             return None
         checksum = self._get(url + ".CHECKSUM")
         if checksum is None:
+            if checksum_may_lag:
+                # Binance publishes a day's .CHECKSUM some time after its
+                # zip. Until then the day is "not yet available": skip it
+                # (the REST gap fill covers it) rather than fail the symbol.
+                log.info("%s: checksum not published yet; skipping for now", url)
+                return None
             raise ValueError(f"no checksum published for {url}")
         if not archive.verify_sha256(blob, checksum.decode("utf-8")):
             raise ValueError(f"checksum mismatch for {url}; refusing to load")
@@ -87,7 +94,8 @@ class ArchiveDownloader:
         )
 
     def fetch_day(self, symbol: str, day: date) -> bytes | None:
-        return self._fetch_verified(archive.daily_url(self.base_url, symbol, day))
+        return self._fetch_verified(archive.daily_url(self.base_url, symbol, day),
+                                    checksum_may_lag=True)
 
 
 def _month_bounds(year: int, month: int) -> tuple[datetime, datetime]:
@@ -151,48 +159,79 @@ def backfill_symbol(conn, symbol: str, downloader, api: BinanceRest,
     return total
 
 
-def _backfill_tail(conn, symbol: str, downloader, api, until: datetime,
-                   fallback_start: datetime | None = None) -> int:
-    """Fill from the last stored candle to `until` using daily archives, then
-    the REST API for whatever is too recent to be archived."""
-    written = 0
-    last = last_candle_time(conn, symbol)
-    cursor = (last + timedelta(minutes=1)) if last else (
-        fallback_start or api.first_candle_time(symbol)
+def _closed_open_bound(cutoff: datetime) -> datetime:
+    """Exclusive upper bound on the open_time of candles that have closed
+    before `cutoff` (a candle opening at T closes at T + 59.999 s)."""
+    t = cutoff - timedelta(milliseconds=59_999)
+    floor = t.replace(second=0, microsecond=0)
+    return floor if floor == t else floor + timedelta(minutes=1)
+
+
+def _rest_candle(symbol: str, r: list) -> Candle:
+    return Candle(
+        symbol=symbol,
+        open_time=archive.parse_timestamp(r[0]),
+        close_time=archive.parse_timestamp(r[6]),
+        open=Decimal(r[1]), high=Decimal(r[2]), low=Decimal(r[3]),
+        close=Decimal(r[4]), volume=Decimal(r[5]),
+        quote_volume=Decimal(r[7]), trade_count=int(r[8]),
+        taker_buy_base=Decimal(r[9]), taker_buy_quote=Decimal(r[10]),
+        source="rest",
     )
 
-    day = cursor.date()
+
+def _rest_fill(conn, symbol: str, api, gap_start: datetime, gap_end: datetime,
+               cutoff: datetime) -> int:
+    """Fill [gap_start, gap_end) from REST, 1000 candles per call."""
+    written = 0
+    cursor = gap_start
+    while cursor < gap_end:
+        rows = api.klines(symbol, int(cursor.timestamp() * 1000), limit=1000)
+        if not rows:
+            break
+        # Keep only this gap, and only closed candles: never the forming one.
+        candles = [c for c in (_rest_candle(symbol, r) for r in rows)
+                   if c.open_time < gap_end and c.close_time < cutoff]
+        if not candles:
+            break  # nothing exists in the rest of this gap on the exchange
+        written += upsert_candles(conn, candles)
+        cursor = candles[-1].open_time + timedelta(minutes=1)
+    return written
+
+
+def _backfill_tail(conn, symbol: str, downloader, api, until: datetime,
+                   loop_start: datetime) -> int:
+    """Complete the current (incomplete) month: re-walk its daily archives,
+    then REST-fill every gap that remains in [tail_start, until).
+
+    The tail is anchored at max(loop_start, first day of until's month) --
+    never at max(open_time), because any newer row (a ws candle from the
+    live collector, a day after a 404) would hide every hole before it.
+    Re-walking the month's daily archives on every run is idempotent and
+    upgrades rest/ws rows to archive via the SQL source precedence.
+    """
+    cutoff = until
+    month_start = until.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    tail_start = max(loop_start, month_start)
+    tail_end = _closed_open_bound(cutoff)
+    if tail_start >= tail_end:
+        return 0
+    written = 0
+
+    day = tail_start.date()
     while day < until.date():
         blob = downloader.fetch_day(symbol, day)
         if blob is not None:
             candles = [c for c in archive.rows_from_zip(blob, symbol)
-                       if c.open_time >= cursor]
+                       if tail_start <= c.open_time < tail_end]
             written += upsert_candles(conn, candles)
         day += timedelta(days=1)
 
-    last = last_candle_time(conn, symbol)
-    cursor = (last + timedelta(minutes=1)) if last else cursor
-    while cursor < until:
-        rows = api.klines(symbol, int(cursor.timestamp() * 1000), limit=1000)
-        if not rows:
-            break
-        candles = [
-            Candle(
-                symbol=symbol,
-                open_time=archive.parse_timestamp(r[0]),
-                close_time=archive.parse_timestamp(r[6]),
-                open=Decimal(r[1]), high=Decimal(r[2]), low=Decimal(r[3]),
-                close=Decimal(r[4]), volume=Decimal(r[5]),
-                quote_volume=Decimal(r[7]), trade_count=int(r[8]),
-                taker_buy_base=Decimal(r[9]), taker_buy_quote=Decimal(r[10]),
-                source="rest",
-            )
-            for r in rows
-        ]
-        # Drop the still-open final candle: only closed candles are stored.
-        candles = [c for c in candles if c.close_time < until]
-        if not candles:
-            break
-        written += upsert_candles(conn, candles)
-        cursor = candles[-1].open_time + timedelta(minutes=1)
+    gaps = find_gaps(conn, symbol, tail_start, tail_end)
+    conn.commit()  # end the read transaction; nothing may hold locks idle
+    for gap_start, gap_end in gaps:
+        filled = _rest_fill(conn, symbol, api, gap_start, gap_end, cutoff)
+        log.info("%s: REST gap %s -> %s: %d candles",
+                 symbol, gap_start, gap_end, filled)
+        written += filled
     return written

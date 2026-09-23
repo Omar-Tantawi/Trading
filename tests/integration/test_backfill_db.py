@@ -259,3 +259,136 @@ def test_migration_002_reopens_months_the_old_code_marked_success(db_conn):
 
     from data.storage.repository import completed_periods
     assert completed_periods(db_conn, "backfill", "BTCUSDT") == {feb}
+
+
+# --- C1: the tail must heal every hole in the current month -----------------
+
+def _kline(open_time: datetime, price: str = "100.0") -> list:
+    close_time = open_time + timedelta(minutes=1) - timedelta(milliseconds=1)
+    return [int(open_time.timestamp() * 1000), price, price, price, price,
+            "10.0", int(close_time.timestamp() * 1000), "1000.0", 5, "5.0",
+            "500.0", "0"]
+
+
+def _day_zip(day: datetime) -> bytes:
+    lines = [",".join(str(v) for v in _kline(day + timedelta(minutes=i), "200.0"))
+             for i in range(1440)]
+    return make_zip("\n".join(lines) + "\n")
+
+
+class DailyDownloader:
+    """No monthly archives; serves the given daily archives, 404s the rest."""
+
+    def __init__(self, days: dict):
+        self.days = days
+        self.day_calls = []
+
+    def fetch_month(self, symbol, year, month):
+        return None
+
+    def fetch_day(self, symbol, day):
+        self.day_calls.append(day)
+        return self.days.get(day)
+
+
+class ExchangeApi:
+    """A REST endpoint that has every minute from `listed` up to and
+    including the still-forming candle at `now`."""
+
+    def __init__(self, listed: datetime, now: datetime):
+        self.listed = listed
+        self.now = now
+        self.starts = []
+
+    def first_candle_time(self, symbol):
+        return self.listed
+
+    def klines(self, symbol, start_ms, limit=1000):
+        self.starts.append(start_ms)
+        t = max(datetime.fromtimestamp(start_ms / 1000, tz=timezone.utc), self.listed)
+        rows = []
+        while t <= self.now and len(rows) < limit:
+            rows.append(_kline(t))
+            t += timedelta(minutes=1)
+        return rows
+
+
+def _minutes(conn, symbol, start, end) -> int:
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM candles_1m WHERE symbol = %s "
+                    "AND open_time >= %s AND open_time < %s", (symbol, start, end))
+        return cur.fetchone()[0]
+
+
+def _ws_candle(open_time: datetime):
+    from data.storage.repository import Candle
+    from decimal import Decimal
+    return Candle(symbol="BTCUSDT", open_time=open_time,
+                  close_time=open_time + timedelta(seconds=59, milliseconds=999),
+                  open=Decimal("1"), high=Decimal("1"), low=Decimal("1"),
+                  close=Decimal("1"), volume=Decimal("1"),
+                  quote_volume=Decimal("1"), trade_count=1,
+                  taker_buy_base=Decimal("1"), taker_buy_quote=Decimal("1"),
+                  source="ws")
+
+
+MAR1 = datetime(2024, 3, 1, tzinfo=timezone.utc)
+UNTIL = datetime(2024, 3, 4, 12, 0, tzinfo=timezone.utc)
+EXPECTED_MINUTES = 3 * 1440 + 720  # 03-01 00:00 .. 03-04 11:59
+
+
+def test_ws_rows_today_with_no_history_leave_no_hole_in_the_current_month(db_conn):
+    """The smoke-run state: the live collector stored two ws candles "now"
+    and nothing else exists. The tail used to start at max(open_time) and
+    silently skip everything before it."""
+    from data.storage.repository import upsert_candles
+
+    upsert_symbol(db_conn, symbol="BTCUSDT")
+    upsert_candles(db_conn, [_ws_candle(datetime(2024, 3, 4, 11, 48, tzinfo=timezone.utc)),
+                             _ws_candle(datetime(2024, 3, 4, 11, 49, tzinfo=timezone.utc))])
+    dl = DailyDownloader({
+        MAR1.date(): _day_zip(MAR1),
+        (MAR1 + timedelta(days=1)).date(): _day_zip(MAR1 + timedelta(days=1)),
+        # 03-03 not published yet; 03-04 is today.
+    })
+    api = ExchangeApi(listed=MAR1, now=UNTIL)
+
+    backfill_symbol(db_conn, "BTCUSDT", dl, api, until=UNTIL)
+
+    assert _minutes(db_conn, "BTCUSDT", MAR1, UNTIL) == EXPECTED_MINUTES
+    with db_conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM candles_1m WHERE symbol = 'BTCUSDT' "
+                    "AND open_time >= %s", (UNTIL,))
+        assert cur.fetchone()[0] == 0, "the forming candle must not be stored"
+
+
+def test_a_daily_archive_404_mid_tail_does_not_become_a_permanent_hole(db_conn):
+    upsert_symbol(db_conn, symbol="BTCUSDT")
+    dl = DailyDownloader({
+        MAR1.date(): _day_zip(MAR1),
+        # 03-02 404s
+        (MAR1 + timedelta(days=2)).date(): _day_zip(MAR1 + timedelta(days=2)),
+    })
+    api = ExchangeApi(listed=MAR1, now=UNTIL)
+
+    backfill_symbol(db_conn, "BTCUSDT", dl, api, until=UNTIL)
+
+    assert _minutes(db_conn, "BTCUSDT", MAR1, UNTIL) == EXPECTED_MINUTES
+
+
+def test_rerun_re_walks_the_months_daily_archives_and_upgrades_rest_rows(db_conn):
+    upsert_symbol(db_conn, symbol="BTCUSDT")
+    day2 = MAR1 + timedelta(days=1)
+    dl = DailyDownloader({MAR1.date(): _day_zip(MAR1)})  # 03-02 not published
+    api = ExchangeApi(listed=MAR1, now=UNTIL)
+    backfill_symbol(db_conn, "BTCUSDT", dl, api, until=UNTIL)
+
+    dl.days[day2.date()] = _day_zip(day2)  # Binance publishes 03-02
+    backfill_symbol(db_conn, "BTCUSDT", dl, api, until=UNTIL)
+
+    with db_conn.cursor() as cur:
+        cur.execute("SELECT source, count(*) FROM candles_1m WHERE symbol = "
+                    "'BTCUSDT' AND open_time >= %s AND open_time < %s GROUP BY 1",
+                    (day2, day2 + timedelta(days=1)))
+        assert dict(cur.fetchall()) == {"archive": 1440}
+    assert _minutes(db_conn, "BTCUSDT", MAR1, UNTIL) == EXPECTED_MINUTES

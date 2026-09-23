@@ -103,3 +103,22 @@ def test_upsert_book_ticker_is_idempotent(db_conn):
         cur.execute("SELECT count(*) FROM book_ticker")
         (count,) = cur.fetchone()
     assert count == 2
+
+
+def test_find_gaps_reports_head_middle_and_tail_gaps(db_conn):
+    from data.storage.repository import find_gaps
+
+    upsert_symbol(db_conn, symbol="BTCUSDT")
+    present = [2, 3, 4, 7, 8]  # 0-1 missing, 5-6 missing, 9 missing
+    upsert_candles(db_conn, [make_candle(i) for i in present])
+
+    gaps = find_gaps(db_conn, "BTCUSDT", T0, T0 + timedelta(minutes=10))
+    m = lambda i: T0 + timedelta(minutes=i)  # noqa: E731
+    assert gaps == [(m(0), m(2)), (m(5), m(7)), (m(9), m(10))]
+
+
+def test_find_gaps_of_an_empty_range_is_the_whole_range(db_conn):
+    from data.storage.repository import find_gaps
+
+    gaps = find_gaps(db_conn, "BTCUSDT", T0, T0 + timedelta(minutes=10))
+    assert gaps == [(T0, T0 + timedelta(minutes=10))]
