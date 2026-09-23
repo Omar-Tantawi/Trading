@@ -122,3 +122,55 @@ def test_find_gaps_of_an_empty_range_is_the_whole_range(db_conn):
 
     gaps = find_gaps(db_conn, "BTCUSDT", T0, T0 + timedelta(minutes=10))
     assert gaps == [(T0, T0 + timedelta(minutes=10))]
+
+
+def _quote(symbol, ts, bid):
+    return (symbol, ts, Decimal(bid), Decimal("1"), Decimal(bid) + Decimal("0.1"),
+            Decimal("2"))
+
+
+def test_book_ticker_keeps_one_row_per_symbol_per_second_the_last_quote(db_conn):
+    """~393 quotes/s across four symbols projected to ~5 GB/day. Keep at
+    most one row per symbol per second: the last quote in that second."""
+    ms = lambda n: T0 + timedelta(milliseconds=n)  # noqa: E731
+    first_flush = [
+        _quote("BTCUSDT", ms(100), "100"),
+        _quote("BTCUSDT", ms(700), "101"),
+        _quote("ETHUSDT", ms(800), "50"),
+        _quote("BTCUSDT", ms(1200), "102"),
+    ]
+    # The next flush can still carry a later quote for the same second.
+    second_flush = [_quote("BTCUSDT", ms(950), "103")]
+
+    upsert_book_ticker(db_conn, first_flush)
+    upsert_book_ticker(db_conn, second_flush)
+    upsert_book_ticker(db_conn, second_flush)  # replay: no change
+
+    with db_conn.cursor() as cur:
+        cur.execute("SELECT symbol, ts, bid_price FROM book_ticker ORDER BY 1, 2")
+        rows = cur.fetchall()
+    assert rows == [
+        ("BTCUSDT", T0, Decimal("103.00000000")),
+        ("BTCUSDT", T0 + timedelta(seconds=1), Decimal("102.00000000")),
+        ("ETHUSDT", T0, Decimal("50.00000000")),
+    ]
+
+
+def test_book_ticker_is_compressed_after_a_day_and_never_deleted(db_conn):
+    with db_conn.cursor() as cur:
+        cur.execute(
+            "SELECT proc_name, config FROM timescaledb_information.jobs "
+            "WHERE hypertable_name = 'book_ticker'"
+        )
+        jobs = {name: config for name, config in cur.fetchall()}
+        cur.execute(
+            "SELECT attname, segmentby_column_index, orderby_column_index, "
+            "orderby_asc FROM timescaledb_information.compression_settings "
+            "WHERE hypertable_name = 'book_ticker'"
+        )
+        settings = {r[0]: r[1:] for r in cur.fetchall()}
+
+    assert jobs.get("policy_compression", {}).get("compress_after") == "1 day"
+    assert "policy_retention" not in jobs, "deleting data is the user's call"
+    assert settings["symbol"][0] == 1, "segmentby symbol"
+    assert settings["ts"][1:] == (1, False), "orderby ts DESC"

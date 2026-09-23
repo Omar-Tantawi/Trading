@@ -92,9 +92,14 @@ BOOK_TICKER_COLUMNS = ("symbol", "ts", "bid_price", "bid_qty", "ask_price", "ask
 
 
 def upsert_book_ticker(conn: psycopg.Connection, rows: list[tuple]) -> int:
-    """Idempotent on (symbol, ts). A book ticker row is a point-in-time
-    observation, so on replay the first value recorded for an instant is
-    kept and later duplicates are silently dropped."""
+    """Store at most one row per symbol per second: the last quote received
+    in that second, stamped with the second itself.
+
+    Enforced in SQL: within a batch DISTINCT ON keeps the latest ts of each
+    (symbol, second); across batches ON CONFLICT DO UPDATE lets a later
+    flush replace the row for a second an earlier flush already wrote.
+    Replaying a batch is idempotent. Returns the rows inserted or updated.
+    """
     if not rows:
         return 0
     cols = ", ".join(BOOK_TICKER_COLUMNS)
@@ -110,12 +115,19 @@ def upsert_book_ticker(conn: psycopg.Connection, rows: list[tuple]) -> int:
         cur.execute(
             f"""
             INSERT INTO book_ticker ({cols})
-            SELECT {cols} FROM staging_book_ticker
-            ON CONFLICT (symbol, ts) DO NOTHING
+            SELECT DISTINCT ON (symbol, date_trunc('second', ts, 'UTC'))
+                   symbol, date_trunc('second', ts, 'UTC'),
+                   bid_price, bid_qty, ask_price, ask_qty
+              FROM staging_book_ticker
+             ORDER BY symbol, date_trunc('second', ts, 'UTC'), ts DESC
+            ON CONFLICT (symbol, ts) DO UPDATE SET
+                bid_price = EXCLUDED.bid_price, bid_qty = EXCLUDED.bid_qty,
+                ask_price = EXCLUDED.ask_price, ask_qty = EXCLUDED.ask_qty
             """
         )
+        written = cur.rowcount
     conn.commit()
-    return len(rows)
+    return written
 
 
 def last_candle_time(conn: psycopg.Connection, symbol: str) -> datetime | None:
