@@ -174,3 +174,90 @@ def test_a_flat_zero_volume_candle_is_valid(db_conn):
                 close=Decimal("10"), volume=Decimal("0"))
     upsert_candles(db_conn, [candle(0), candle(1, **flat), candle(2)])
     assert run_quality_checks(db_conn, "BTCUSDT").invalid == 0
+
+
+# --- C2: classify gaps; an unexplained hole over an hour blocks training -----
+
+def _record_month(conn, status: str, rows: int, month_start=T0):
+    from data.storage.repository import finish_run, start_run
+
+    month_end = month_start.replace(month=month_start.month + 1)
+    run_id = start_run(conn, "backfill", "BTCUSDT", month_start, month_end)
+    finish_run(conn, run_id, status, rows)
+
+
+def _history_with_gap(conn, gap_minutes: int, total: int = 3000, at: int = 1000):
+    upsert_symbol(conn, symbol="BTCUSDT")
+    upsert_candles(conn, [candle(i) for i in range(total)
+                          if not (at <= i < at + gap_minutes)])
+
+
+def test_an_unexplained_gap_over_an_hour_fails_and_blocks_training(db_conn):
+    # 61 of 3000 minutes missing is ~98% complete: the old percentage rule
+    # called this WARN and assert_trainable let it through without a word.
+    _history_with_gap(db_conn, 61)
+
+    report = run_quality_checks(db_conn, "BTCUSDT")
+    assert report.verdict == "FAIL"
+    assert report.missing == 61
+    with pytest.raises(DataQualityError, match="refusing to train"):
+        assert_trainable(db_conn, ["BTCUSDT"])
+
+
+def test_a_gap_in_a_month_whose_archive_loaded_is_an_explained_outage(db_conn):
+    # The monthly archive is Binance's own record: a gap inside it is the
+    # exchange's outage, not ours.
+    _history_with_gap(db_conn, 61)
+    _record_month(db_conn, "success", 44579)
+
+    report = run_quality_checks(db_conn, "BTCUSDT")
+    assert report.verdict == "PASS"
+    assert report.missing == 0
+    assert report.details["explained_missing"] == 61
+    assert assert_trainable(db_conn, ["BTCUSDT"]) == []
+
+
+@pytest.mark.parametrize("status,rows", [("missing", 0), ("success", 0), ("failed", 0)])
+def test_a_month_without_a_loaded_archive_explains_nothing(db_conn, status, rows):
+    _history_with_gap(db_conn, 61)
+    _record_month(db_conn, status, rows)
+
+    assert run_quality_checks(db_conn, "BTCUSDT").verdict == "FAIL"
+
+
+def test_a_gap_spilling_past_the_loaded_month_is_unexplained(db_conn):
+    # Loaded month is April; the data and gap are in May.
+    _history_with_gap(db_conn, 61)
+    _record_month(db_conn, "success", 43200, month_start=T0.replace(month=4))
+
+    assert run_quality_checks(db_conn, "BTCUSDT").verdict == "FAIL"
+
+
+def test_exactly_sixty_unexplained_minutes_is_warn_not_fail(db_conn):
+    _history_with_gap(db_conn, 60)
+    assert run_quality_checks(db_conn, "BTCUSDT").verdict == "WARN"
+
+
+def test_a_short_unexplained_gap_warns_and_assert_trainable_says_so(db_conn, caplog):
+    import logging
+
+    _history_with_gap(db_conn, 10)
+
+    with caplog.at_level(logging.WARNING, logger="data.quality.checks"):
+        warnings = assert_trainable(db_conn, ["BTCUSDT"])
+
+    assert [r.verdict for r in warnings] == ["WARN"]
+    assert warnings[0].symbol == "BTCUSDT"
+    assert any("BTCUSDT" in rec.getMessage() and "WARN" in rec.getMessage()
+               for rec in caplog.records), "a WARN must never pass silently"
+
+
+def test_render_shows_where_the_largest_gaps_are(db_conn):
+    _history_with_gap(db_conn, 61)
+    text = run_quality_checks(db_conn, "BTCUSDT").render()
+
+    gap_start = T0 + timedelta(minutes=1000)          # 2024-05-01 16:40
+    gap_end = T0 + timedelta(minutes=1061)            # 2024-05-01 17:41
+    assert f"{gap_start:%Y-%m-%d %H:%M}" in text
+    assert f"{gap_end:%Y-%m-%d %H:%M}" in text
+    assert "UNEXPLAINED" in text

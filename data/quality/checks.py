@@ -1,9 +1,12 @@
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from data.quality.report import Report
 from data.storage.repository import find_gaps
+
+log = logging.getLogger(__name__)
 
 STEP = {"1m": timedelta(minutes=1), "5m": timedelta(minutes=5),
         "15m": timedelta(minutes=15), "1h": timedelta(hours=1),
@@ -27,24 +30,70 @@ INVALID_PREDICATE = """
 """
 
 
-def subtract_known_outages(gaps, outages) -> list[tuple[datetime, datetime]]:
-    """Drop gaps fully covered by a known exchange outage."""
-    remaining = []
-    for start, end in gaps:
-        if any(o_start <= start and end <= o_end for o_start, o_end in outages):
-            continue
-        remaining.append((start, end))
-    return remaining
+# Any single gap longer than this that nothing explains is an ingestion hole
+# too big to train through: FAIL. Shorter unexplained gaps are WARN.
+MAX_UNEXPLAINED_GAP = timedelta(minutes=60)
 
 
-def verdict_for(completeness: float, invalid: int, duplicates: int) -> str:
+def _month_starts(start: datetime, end: datetime) -> list[datetime]:
+    """First instants of every calendar month overlapping [start, end)."""
+    last = end - timedelta(microseconds=1)
+    y, m = start.year, start.month
+    out = []
+    while (y, m) <= (last.year, last.month):
+        out.append(datetime(y, m, 1, tzinfo=timezone.utc))
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return out
+
+
+def classify_gaps(gaps, loaded_months, known_outages=None):
+    """Split gaps into (explained, unexplained).
+
+    A gap is explained -- the exchange's own outage, not ours -- when every
+    month it touches had its monthly archive loaded with rows > 0 (that
+    archive is Binance's own record of the month), or when a known outage
+    covers it. Any other gap is an ingestion hole.
+    """
+    explained, unexplained = [], []
+    for gap in gaps:
+        g_start, g_end = gap
+        by_outage = any(o_start <= g_start and g_end <= o_end
+                        for o_start, o_end in known_outages or ())
+        by_archive = all(m in loaded_months for m in _month_starts(g_start, g_end))
+        (explained if by_outage or by_archive else unexplained).append(gap)
+    return explained, unexplained
+
+
+def verdict_for(completeness: float, invalid: int, duplicates: int,
+                unexplained_gaps: int = 0,
+                longest_unexplained: timedelta = timedelta(0)) -> str:
     if invalid or duplicates:
         return "FAIL"
-    if completeness >= PASS_COMPLETENESS:
-        return "PASS"
-    if completeness >= WARN_COMPLETENESS:
+    if longest_unexplained > MAX_UNEXPLAINED_GAP:
+        return "FAIL"
+    if completeness < WARN_COMPLETENESS:
+        return "FAIL"
+    if unexplained_gaps or completeness < PASS_COMPLETENESS:
         return "WARN"
-    return "FAIL"
+    return "PASS"
+
+
+def _loaded_months(conn, symbol: str) -> set[datetime]:
+    """Months whose monthly archive loaded with rows > 0."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT DISTINCT period_start FROM ingestion_runs "
+            "WHERE component = 'backfill' AND symbol = %s "
+            "AND status = 'success' AND rows_written > 0", (symbol,)
+        )
+        return {r[0] for r in cur.fetchall()}
+
+
+def _gap_detail(gap, explained: bool) -> dict:
+    g_start, g_end = gap
+    return {"start": g_start.isoformat(), "end": g_end.isoformat(),
+            "minutes": int((g_end - g_start).total_seconds() // 60),
+            "explained": explained}
 
 
 def run_quality_checks(conn, symbol: str, timeframe: str = "1m",
@@ -90,14 +139,26 @@ def run_quality_checks(conn, symbol: str, timeframe: str = "1m",
 
     # Gaps via lag() in SQL (see find_gaps); only the gaps come back.
     gaps = find_gaps(conn, symbol, start, end + step, step=step, table=table)
-    if known_outages:
-        gaps = subtract_known_outages(gaps, known_outages)
-    missing = sum(int((g_end - g_start) / step) for g_start, g_end in gaps)
+    explained, unexplained = classify_gaps(
+        gaps, _loaded_months(conn, symbol), known_outages
+    )
+    missing = sum(int((g_end - g_start) / step) for g_start, g_end in unexplained)
+    explained_missing = sum(int((g_end - g_start) / step)
+                            for g_start, g_end in explained)
+    longest = max((g_end - g_start for g_start, g_end in unexplained),
+                  default=timedelta(0))
 
     expected = int((end - start) / step) + 1
     completeness = 100.0 * (expected - missing) / expected if expected else 0.0
-    verdict = verdict_for(completeness, invalid, duplicates + out_of_order)
+    verdict = verdict_for(completeness, invalid, duplicates + out_of_order,
+                          unexplained_gaps=len(unexplained),
+                          longest_unexplained=longest)
 
+    # Unexplained gaps first (they are what needs action), longest first.
+    ranked = sorted(
+        [(g, False) for g in unexplained] + [(g, True) for g in explained],
+        key=lambda item: (item[1], -(item[0][1] - item[0][0]).total_seconds()),
+    )
     report = Report(
         symbol=symbol, timeframe=timeframe, checked_from=start, checked_to=end,
         total_candles=in_range, duplicates=duplicates, invalid=invalid,
@@ -106,10 +167,10 @@ def run_quality_checks(conn, symbol: str, timeframe: str = "1m",
         details={
             "out_of_order": out_of_order,
             "gap_count": len(gaps),
-            "largest_gaps": [
-                [g[0].isoformat(), g[1].isoformat()]
-                for g in sorted(gaps, key=lambda g: g[1] - g[0], reverse=True)[:10]
-            ],
+            "unexplained_gap_count": len(unexplained),
+            "explained_missing": explained_missing,
+            "longest_unexplained_minutes": int(longest.total_seconds() // 60),
+            "largest_gaps": [_gap_detail(g, ex) for g, ex in ranked[:10]],
         },
     )
     _store(conn, report)
@@ -131,16 +192,26 @@ def _store(conn, report: Report) -> None:
     conn.commit()
 
 
-def assert_trainable(conn, symbols: list[str], timeframe: str = "1m") -> None:
-    """Every later sub-project calls this before training. A FAIL stops it."""
-    failures = []
+def assert_trainable(conn, symbols: list[str], timeframe: str = "1m") -> list[Report]:
+    """Every later sub-project calls this before training. A FAIL stops it.
+
+    Returns the WARN reports, each already logged at WARNING level: a WARN
+    does not block training, but it must never pass silently.
+    """
+    failures, warnings = [], []
     for symbol in symbols:
         report = run_quality_checks(conn, symbol, timeframe)
         if report.verdict == "FAIL":
             failures.append(report)
+        elif report.verdict == "WARN":
+            warnings.append(report)
+            log.warning("data quality WARN for %s [%s]; training proceeds, "
+                        "but look at this:%s", report.symbol, report.timeframe,
+                        report.render())
     if failures:
         summary = "\n".join(r.render() for r in failures)
         raise DataQualityError(
             f"data quality FAILED for {len(failures)} symbol(s); "
             f"refusing to train:\n{summary}"
         )
+    return warnings
