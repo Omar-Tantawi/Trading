@@ -82,10 +82,12 @@ tests/
 - Consumes: nothing.
 - Produces: `data.config.Settings` with fields `database_url: str`, `symbols: list[str]`, `binance_base_url: str`, `binance_ws_url: str`, `binance_data_url: str`, `data_cache_dir: Path`, `log_level: str`; and `get_settings() -> Settings` (cached).
 
-- [ ] **Step 1: Create the git-ignore file**
+- [ ] **Step 1: Extend the git-ignore file**
 
-`.gitignore`:
+`.gitignore` already exists and already ignores `.superpowers/`. **Keep that
+line** and add the rest, so the file reads:
 ```gitignore
+.superpowers/
 .venv/
 __pycache__/
 *.pyc
@@ -966,10 +968,18 @@ BASE = "https://api.binance.com"
 
 
 def test_backoff_grows_and_is_capped():
-    delays = backoff_delays(6, base=0.5, cap=8.0)
+    # Without jitter the growth is deterministic and must be monotonic.
+    delays = backoff_delays(6, base=0.5, cap=8.0, jitter=False)
     assert delays[0] == pytest.approx(0.5)
     assert delays == sorted(delays)
     assert max(delays) <= 8.0
+
+
+def test_backoff_jitter_never_exceeds_the_cap():
+    # Jitter must be applied inside the cap, not on top of it: a delay
+    # above the cap is what turns a retry storm into a ban.
+    for _ in range(200):
+        assert max(backoff_delays(8, base=0.5, cap=8.0)) <= 8.0
 
 
 @respx.mock
@@ -1060,12 +1070,19 @@ class RateLimitedError(Exception):
         self.retry_after = retry_after
 
 
-def backoff_delays(attempts: int, base: float = 0.5, cap: float = 30.0) -> list[float]:
-    """Exponential backoff with jitter, capped."""
+def backoff_delays(attempts: int, base: float = 0.5, cap: float = 30.0,
+                   jitter: bool = True) -> list[float]:
+    """Exponential backoff with jitter, capped.
+
+    The jitter is applied *inside* the cap: a delay longer than the cap
+    would be a surprise, and the cap is what keeps a retry storm bounded.
+    """
     out = []
     for i in range(attempts):
-        raw = min(cap, base * (2 ** i))
-        out.append(raw * (0.8 + 0.4 * random.random()) if i else raw)
+        raw = base * (2 ** i)
+        if jitter and i:
+            raw *= 0.8 + 0.4 * random.random()
+        out.append(min(cap, raw))
     return out
 
 
@@ -1801,7 +1818,11 @@ git commit -m "feat: resumable historical backfill from Binance archives and RES
   - `stream_url(ws_base: str, symbols: list[str]) -> str`
   - `parse_kline_message(msg: dict, symbol_hint: str | None = None) -> Candle | None` (returns `None` for unclosed candles)
   - `parse_book_ticker_message(msg: dict, received_at: datetime) -> tuple`
-  - `LiveCollector(conn_factory, settings, api)` with `async run(stop_event)` and `async backfill_gap(symbol)`
+  - `minutes_missing(last_open: datetime, now: datetime) -> int`
+  - `LiveCollector(settings=None, api=None, connect_fn=connect)` with
+    `async run(stop_event: asyncio.Event | None = None) -> None` and the
+    synchronous `gap_fill(conn, symbol) -> int` (synchronous because psycopg
+    and the REST client are both blocking; it runs before the socket opens)
 
 - [ ] **Step 1: Write the failing parser tests**
 
@@ -2235,7 +2256,9 @@ git commit -m "test: prove TimescaleDB 1h aggregates match an independent comput
 - Test: `tests/unit/test_quality_rules.py`, `tests/integration/test_quality_db.py`
 
 **Interfaces:**
-- Consumes: `repository.get_candles`, a database connection.
+- Consumes: a database connection only. It queries `candles_1m` and the
+  aggregate views directly rather than through `get_candles`, because it
+  needs aggregate counts the row-returning helper does not provide.
 - Produces:
   - `Report` dataclass: `symbol, timeframe, checked_from, checked_to, total_candles, duplicates, invalid, missing, completeness_pct, verdict, details: dict` plus `render() -> str`
   - `find_invalid(rows: list[dict]) -> list[dict]`
@@ -2659,13 +2682,15 @@ def test_help_lists_every_command():
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
     for cmd in ["db", "symbols", "backfill", "live", "quality", "status"]:
-        assert cmd in result.stdout
+        assert cmd in result.output
 
 
 def test_quality_command_rejects_unknown_timeframe():
+    # Must fail on the argument, not on missing configuration: the
+    # validation runs before any settings are loaded.
     result = runner.invoke(app, ["quality", "--timeframe", "7m"])
     assert result.exit_code != 0
-    assert "7m" in result.stdout or "timeframe" in result.stdout.lower()
+    assert "7m" in result.output or "timeframe" in result.output.lower()
 ```
 
 - [ ] **Step 2: Run and watch it fail**
@@ -2769,9 +2794,11 @@ def quality(
     timeframe: str = typer.Option("1m"),
 ):
     """Run data-quality checks and print the report."""
-    _setup_logging()
+    # Validate arguments before touching configuration, so a bad argument
+    # reports itself rather than a confusing config error.
     if timeframe not in STEP:
         raise typer.BadParameter(f"unknown timeframe {timeframe!r}")
+    _setup_logging()
     settings = get_settings()
     targets = [symbol.upper()] if symbol else settings.symbols
     with connect() as conn:
