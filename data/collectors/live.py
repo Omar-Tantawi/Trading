@@ -87,6 +87,7 @@ class LiveCollector:
         stop_event = stop_event or asyncio.Event()
         url = stream_url(self.settings.binance_ws_url, self.settings.symbols)
         while not stop_event.is_set():
+            conn = None
             try:
                 conn = self.connect_fn()
                 for symbol in self.settings.symbols:
@@ -101,12 +102,20 @@ class LiveCollector:
                             self._handle(json.loads(raw), conn)
                     finally:
                         flusher.cancel()
-                        conn.close()
+                        if self.book_buffer:
+                            rows, self.book_buffer = self.book_buffer, []
+                            try:
+                                upsert_book_ticker(conn, rows)
+                            except Exception as exc:
+                                log.error("final book ticker flush failed: %s", exc)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 log.error("live collector error: %s; reconnecting in 5s", exc)
                 await asyncio.sleep(5)
+            finally:
+                if conn is not None:
+                    conn.close()
 
     def _handle(self, message: dict, conn) -> None:
         data = message.get("data", message)
@@ -133,3 +142,4 @@ class LiveCollector:
                     upsert_book_ticker(conn, rows)
                 except Exception as exc:
                     log.error("book ticker flush failed: %s", exc)
+                    conn.rollback()
