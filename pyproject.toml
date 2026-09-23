@@ -1,0 +1,38 @@
+[project]
+name = "trading-buddy"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "httpx>=0.27",
+    "websockets>=13.0",
+    "psycopg[binary,pool]>=3.2",
+    "pydantic-settings>=2.4",
+    "typer>=0.12",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pandas>=2.2",
+    "respx>=0.21",
+]
+
+[project.scripts]
+tb = "data.cli:app"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["data*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "network: hits the real Binance API (deselected by default)",
+    "db: needs the TimescaleDB container",
+]
+addopts = "-m 'not network'"
