@@ -21,6 +21,17 @@ for the implementation plan.
    `.env.example` and `.env` already point at `localhost:5433`; if you
    connect with `psql` or another client directly, remember the `-p 5433`.
 
+   **Network and password:** the port is published on `127.0.0.1` only,
+   so the database is not reachable from other machines. The password
+   defaults to `tb_local_dev`, which is fine on a single-user PC.
+
+   **On a VPS, set a new password before the first start.** Docker-published
+   ports bypass `ufw`, and Postgres fixes the password when the volume is
+   first initialised; changing it in compose later does nothing. So, before
+   the very first `docker compose up -d`, add `POSTGRES_PASSWORD=<strong
+   value>` to `.env` and use the same value in `DATABASE_URL` and
+   `TEST_DATABASE_URL`.
+
 4. Create the virtual environment and install:
 
    ```bash

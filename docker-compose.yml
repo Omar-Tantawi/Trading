@@ -5,10 +5,16 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: tb
-      POSTGRES_PASSWORD: tb_local_dev
+      # Set POSTGRES_PASSWORD in the environment (or .env) BEFORE the first
+      # start on any other machine. The default only matches the volume
+      # this dev machine was initialised with; an existing volume keeps its
+      # original password whatever this says.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tb_local_dev}
       POSTGRES_DB: trading_buddy
     ports:
-      - "5433:5432"
+      # Loopback only. On a VPS, Docker-published ports bypass ufw, so a
+      # plain "5433:5432" would expose the database to the internet.
+      - "127.0.0.1:5433:5432"
     volumes:
       - tb_pgdata:/var/lib/postgresql/data
     healthcheck:
