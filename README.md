@@ -18,8 +18,11 @@ for the implementation plan.
    Postgres default of 5432. This machine also runs a native PostgreSQL 18
    Windows service bound to 5432, so `docker-compose.yml` remaps the
    `tb-timescaledb` container's 5432 to host 5433 to avoid a collision.
-   `.env.example` and `.env` already point at `localhost:5433`; if you
+   `.env.example` and `.env` already point at `127.0.0.1:5433`; if you
    connect with `psql` or another client directly, remember the `-p 5433`.
+   Use `127.0.0.1`, not `localhost`: the container listens on IPv4 only, and
+   on Windows `localhost` tries IPv6 `::1` first, where nothing answers, so
+   the connection hangs.
 
    **Network and password:** the port is published on `127.0.0.1` only,
    so the database is not reachable from other machines. The password

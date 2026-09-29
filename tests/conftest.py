@@ -8,7 +8,10 @@ TEST_DSN = os.environ.get(
     # runs a native PostgreSQL 18 Windows service on 5432, which intercepts
     # connections meant for the tb-timescaledb container. See docker-compose.yml
     # and task-2-report.md for the full story.
-    "postgresql://tb:tb_local_dev@localhost:5433/trading_buddy_test",
+    # Host 127.0.0.1, not localhost: the container is published on IPv4
+    # loopback only, and on Windows localhost tries ::1 first, which never
+    # answers, so the connection hangs.
+    "postgresql://tb:tb_local_dev@127.0.0.1:5433/trading_buddy_test",
 )
 
 

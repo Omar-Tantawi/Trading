@@ -6,10 +6,15 @@ from data.config import get_settings
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
+# psycopg has no connect timeout by default, so an address that neither
+# answers nor refuses (the ::1 that `localhost` tries first on Windows, where
+# the container listens on IPv4 only) would hang a connection forever.
+CONNECT_TIMEOUT_SECONDS = 10
+
 
 def connect(dsn: str | None = None) -> psycopg.Connection:
     dsn = dsn or get_settings().database_url
-    return psycopg.connect(dsn)
+    return psycopg.connect(dsn, connect_timeout=CONNECT_TIMEOUT_SECONDS)
 
 
 def _ensure_migrations_table(conn: psycopg.Connection) -> None:
@@ -32,7 +37,8 @@ def run_migrations(dsn: str | None = None) -> list[str]:
     """
     dsn = dsn or get_settings().database_url
     applied: list[str] = []
-    with psycopg.connect(dsn, autocommit=True) as conn:
+    with psycopg.connect(dsn, autocommit=True,
+                         connect_timeout=CONNECT_TIMEOUT_SECONDS) as conn:
         _ensure_migrations_table(conn)
         with conn.cursor() as cur:
             cur.execute("SELECT filename FROM schema_migrations")

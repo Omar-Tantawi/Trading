@@ -7,6 +7,8 @@ from typing import Iterable
 
 import psycopg
 
+from data.storage.db import CONNECT_TIMEOUT_SECONDS
+
 log = logging.getLogger(__name__)
 
 CANDLE_COLUMNS = (
@@ -272,8 +274,12 @@ def refresh_aggregates(conn, start: datetime, end: datetime,
     _check_aware(end, "end")
     now = now or datetime.now(timezone.utc)
     refreshed = []
-    with psycopg.connect(**conn.info.get_parameters(),
-                         password=conn.info.password, autocommit=True) as ac:
+    # get_parameters() carries connect_timeout only if `conn` was opened with
+    # one; make sure this connection always has it.
+    params = {"connect_timeout": CONNECT_TIMEOUT_SECONDS,
+              **conn.info.get_parameters()}
+    with psycopg.connect(**params, password=conn.info.password,
+                         autocommit=True) as ac:
         for view, step in AGGREGATE_STEPS.items():
             w_start = _floor(start, step)
             w_end = min(_ceil(end, step), _floor(now, step))
