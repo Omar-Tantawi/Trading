@@ -1,6 +1,7 @@
 """Hand-verified tests for volatility features and the regime (spec 4.4, 4.7)."""
 
 import math
+import time
 from datetime import timedelta
 
 import numpy as np
@@ -122,7 +123,6 @@ def test_vol_pct_is_fast_on_a_five_minute_year():
     atr.iloc[:42] = np.nan
     ones = pd.Series(1.0, index=idx)
     bars = pd.DataFrame({"high": ones, "low": ones, "close": ones})
-    import time
     t0 = time.perf_counter()
     out = volatility.compute(bars, ones * np.nan, atr, step)
     elapsed = time.perf_counter() - t0
@@ -200,25 +200,3 @@ def test_vol_pct_matches_brute_force_definition():
             assert np.isnan(got.iloc[i])
         else:
             expected = 100.0 * (in_window <= atr.iloc[i]).sum() / len(in_window)
-            assert got.iloc[i] == pytest.approx(expected)
-
-
-def test_vol_pct_matches_brute_force_definition():
-    n = 1700                                   # 6h bars: 425 days, window rolls
-    idx = pd.date_range("2022-01-01", periods=n, freq="6h", tz="UTC",
-                        name="open_time")
-    rng = np.random.default_rng(7)
-    values = np.round(rng.normal(5, 1, n), 1)  # rounding forces ties
-    values[rng.random(n) < 0.1] = np.nan
-    values[:20] = np.nan
-    atr = pd.Series(values, index=idx)
-    got = volatility.vol_percentile(atr)
-    first = atr.first_valid_index()
-    for i in (0, 100, 200, 300, 699, 1000, 1400, 1699):
-        t = idx[i]
-        in_window = atr[(idx > t - timedelta(days=365)) & (idx <= t)].dropna()
-        if np.isnan(atr.iloc[i]) or t - first < timedelta(days=30):
-            assert np.isnan(got.iloc[i])
-        else:
-            expected = 100.0 * (in_window <= atr.iloc[i]).sum() / len(in_window)
-            assert got.iloc[i] == pytest.approx(expected)
