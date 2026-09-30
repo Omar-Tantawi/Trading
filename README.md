@@ -111,6 +111,44 @@ interrupted (Ctrl+C):
 `tb quality --timeframe 1h` (or any non-1m timeframe) takes its expected
 range from `candles_1m`, so an aggregate that is missing history FAILs.
 
+## Market features (sub-project 2a)
+
+From the stored candles, `tb features build` computes a set of market
+features (returns, EMAs, RSI, MACD, ATR, ADX, swing structure, volatility
+and volume measures, regime labels) for 5m, 15m, 1h, 4h and 1d, and stores
+them in the `features_*` tables. `tb analyze` shows the current state in
+plain language.
+
+```bash
+.venv\Scripts\tb.exe features build
+.venv\Scripts\tb.exe features build --symbol BTCUSDT --timeframe 1h
+.venv\Scripts\tb.exe features build --rebuild
+.venv\Scripts\tb.exe analyze BTCUSDT
+.venv\Scripts\tb.exe analyze BTCUSDT --no-build
+```
+
+- **Built on demand.** Features exist only after you run `tb features build`
+  (or `tb analyze`, which builds first). Nothing keeps them fresh yet; the
+  live collector does not update them.
+- **Incremental.** A build only computes the bars that are new since the
+  last one, so re-running it is cheap and always safe. Only bars whose whole
+  time span is already covered by stored 1m candles are built.
+- **`--rebuild` recomputes everything from full history.** Run it after
+  repairing holes in the candle data (for example by re-running
+  `tb backfill`): bars that were already built over a hole are not
+  recomputed automatically.
+- **Quality gate.** A symbol whose 1m data fails `tb quality` is skipped,
+  and the command exits non-zero. Each symbol and timeframe is isolated: one
+  failure does not stop the others.
+- **STALE.** `tb analyze` marks a timeframe **STALE** when its newest
+  feature bar is older than 2 x the timeframe plus 5 minutes (for 1h: more
+  than 2 hours 5 minutes). It means the features have not been built
+  recently, not that anything is wrong. Run `tb features build`.
+- `tb analyze` describes the market on each timeframe and counts how many
+  are bullish, bearish or sideways. It never gives trading advice.
+- `--no-build` prints what is already stored, without building. `SYMBOL` is
+  case-insensitive. A symbol with no stored 1m candles exits with an error.
+
 ## Facts worth knowing
 
 - All timestamps are UTC. All prices are `Decimal`, never `float`.

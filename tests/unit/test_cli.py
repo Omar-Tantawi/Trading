@@ -12,7 +12,8 @@ runner = CliRunner()
 def test_help_lists_every_command():
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    for cmd in ["db", "symbols", "backfill", "live", "quality", "status"]:
+    for cmd in ["db", "symbols", "features", "analyze", "backfill", "live",
+                "quality", "status"]:
         assert cmd in result.output
 
 
