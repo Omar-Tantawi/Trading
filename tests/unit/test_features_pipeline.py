@@ -133,6 +133,53 @@ def test_incremental_window_equals_full(make_bars, assert_features_match):
         assert_features_match(from_window.loc[after], from_full.loc[after])
 
 
+def _btc_like_bars(n, step, seed=0):
+    """A walk at BTC price levels (30,000 to 60,000 on a 0.01 tick) with calm
+    and volatile stretches: 0.01 % to 0.5 % per bar, each 50 to 2,000 bars
+    long. make_bars' price of about 100 hides float drift in rolling
+    statistics that shows at these levels."""
+    rng = np.random.default_rng(seed)
+    sigma = np.empty(n)
+    i = 0
+    while i < n:
+        length = int(rng.integers(50, 2000))
+        sigma[i:i + length] = rng.choice([0.0001, 0.0002, 0.001, 0.003, 0.005])
+        i += length
+    lo, hi = np.log(30_000), np.log(60_000)
+    walk = np.mod(np.cumsum(rng.normal(0.0, sigma)), 2 * (hi - lo))
+    close = np.round(np.exp(lo + np.minimum(walk, 2 * (hi - lo) - walk)), 2)
+    open_ = np.concatenate(([close[0]], close[:-1]))
+    wick = np.abs(rng.normal(0.0, sigma / 2))
+    volume = np.round(np.exp(rng.normal(np.log(800), 0.6, n)), 3)
+    index = pd.DatetimeIndex(
+        [datetime(2018, 1, 1, tzinfo=timezone.utc) + i * step for i in range(n)],
+        name="open_time")
+    return pd.DataFrame(
+        {"open": open_,
+         "high": np.round(np.maximum(open_, close) * (1 + wick), 2),
+         "low": np.round(np.minimum(open_, close) * (1 - wick), 2),
+         "close": close, "volume": volume,
+         "taker_buy_base": np.round(volume * rng.uniform(0.3, 0.7, n), 3)},
+        index=index)
+
+
+def test_incremental_window_equals_full_at_btc_prices(assert_features_match):
+    # About 6.8 years of 1h bars. A rolling statistic whose value depends on
+    # how many bars came before would make the window and the full history
+    # disagree here (spec section 5.3).
+    n = 60_000
+    bars = _btc_like_bars(n, HOUR)
+    assert bars["close"].between(30_000, 60_000).all()
+    cut_time = bars.index[n - 500]
+    window = bars[bars.index >= lookback_start(cut_time.to_pydatetime(), HOUR)]
+    assert len(window) < len(bars)
+    from_window = compute_features(window, HOUR)
+    from_full = compute_features(bars, HOUR)
+    after = from_full.index[from_full.index > cut_time]
+    assert len(after) == 499
+    assert_features_match(from_window.loc[after], from_full.loc[after])
+
+
 def test_short_and_empty_history(make_bars):
     short = compute_features(make_bars(10), HOUR)
     assert tuple(short.columns) == FEATURE_COLUMNS and len(short) == 10

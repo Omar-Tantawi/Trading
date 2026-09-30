@@ -7,6 +7,7 @@ gives NaN, never inf. Warm-up blanking is not done here (the pipeline does it).
 
 import numpy as np
 import pandas as pd
+from numpy.lib.stride_tricks import sliding_window_view
 
 
 def _safe_div(a: pd.Series, b: pd.Series) -> pd.Series:
@@ -83,10 +84,30 @@ def macd(
     return line, sig, line - sig
 
 
+def _window_std(s: pd.Series, n: int) -> pd.Series:
+    """Population standard deviation of each n-bar window, computed from that
+    window alone; NaN for the first n - 1 bars and for any window with a NaN.
+
+    pandas' rolling std updates a running state bar by bar, so at price levels
+    (about 30,000 with a std near 1e-4 of the price) its value drifts with the
+    length of the history, and an incremental window would disagree with the
+    full history (spec section 5.3). A flat window is exactly 0: numpy's
+    two-pass std leaves a rounding residue there.
+    """
+    values = s.to_numpy(dtype="float64")
+    out = np.full(len(values), np.nan)
+    if len(values) >= n:
+        windows = sliding_window_view(values, n)
+        std = windows.std(axis=1)
+        std[windows.max(axis=1) == windows.min(axis=1)] = 0.0
+        out[n - 1:] = std
+    return pd.Series(out, index=s.index)
+
+
 def bollinger(close: pd.Series, n: int = 20, k: float = 2.0) -> tuple[pd.Series, pd.Series]:
     """Returns (upper, lower): sma +/- k population standard deviations."""
     mid = close.rolling(n).mean()
-    std = close.rolling(n).std(ddof=0)
+    std = _window_std(close, n)
     return (mid + k * std).astype("float64"), (mid - k * std).astype("float64")
 
 

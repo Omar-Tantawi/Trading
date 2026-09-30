@@ -130,6 +130,16 @@ def test_bollinger_hand_values():      # n=3, k=2 on [1, 2, 3]: sma 2, populatio
     assert lo.iloc[2] == pytest.approx(2 - 2 * (2 / 3) ** 0.5)
 
 
+def test_bollinger_flat_window_at_btc_price_has_zero_width():
+    # A flat window after a varied history: the band width must be exactly 0
+    # (so bb_pct_b is blank), not a rounding residue of the history or of the
+    # window's mean.
+    varied = [63_000.0 + 97.13 * (i % 7) for i in range(30)]
+    close = pd.Series(varied + [63_696.17] * 20)
+    up, lo = bollinger(close, 20, 2.0)
+    assert up.iloc[-1] == lo.iloc[-1]
+
+
 def test_stochastic_bounds_and_flat_window(make_bars, bars_from):
     b = make_bars(400, seed=5)
     k, d = stochastic(b.high, b.low, b.close)
