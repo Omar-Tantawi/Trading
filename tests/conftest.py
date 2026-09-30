@@ -1,5 +1,8 @@
 import os
+from datetime import datetime, timedelta, timezone
 
+import numpy as np
+import pandas as pd
 import pytest
 
 TEST_DSN = os.environ.get(
@@ -59,3 +62,60 @@ def autocommit_conn(migrated_db):
         yield conn
     finally:
         conn.close()
+
+
+_BAR_COLUMNS = ["open", "high", "low", "close", "volume", "taker_buy_base"]
+_DEFAULT_START = datetime(2022, 1, 1, tzinfo=timezone.utc)
+
+
+def _bar_index(n, step, start):
+    return pd.DatetimeIndex(
+        [start + i * step for i in range(n)], name="open_time"
+    ).tz_convert("UTC")
+
+
+@pytest.fixture
+def make_bars():
+    """Factory for a seeded random-walk bar series (float64, UTC index)."""
+
+    def _make(n=3000, *, step=timedelta(hours=1), seed=0, start=_DEFAULT_START):
+        rng = np.random.default_rng(seed)
+        close = 100.0 * np.exp(np.cumsum(rng.normal(0.0, 0.01, n)))
+        open_ = np.concatenate(([100.0], close[:-1]))
+        high = np.maximum(open_, close) * (1 + np.abs(rng.normal(0.0, 0.003, n)))
+        low = np.minimum(open_, close) * (1 - np.abs(rng.normal(0.0, 0.003, n)))
+        volume = np.exp(rng.normal(3.0, 0.5, n))
+        taker = volume * rng.uniform(0.3, 0.7, n)
+        return pd.DataFrame(
+            {"open": open_, "high": high, "low": low, "close": close,
+             "volume": volume, "taker_buy_base": taker},
+            index=_bar_index(n, step, start),
+            columns=_BAR_COLUMNS,
+        ).astype("float64")
+
+    return _make
+
+
+@pytest.fixture
+def bars_from():
+    """Factory for explicit bars. opens default to closes, volumes to 1.0,
+    taker-buy volume to half the volume."""
+
+    def _from(*, highs, lows, closes, opens=None, volumes=None, taker=None,
+              step=timedelta(hours=1), start=_DEFAULT_START):
+        n = len(closes)
+        closes = np.asarray(closes, dtype="float64")
+        opens = closes.copy() if opens is None else np.asarray(opens, dtype="float64")
+        volumes = (np.ones(n) if volumes is None
+                   else np.asarray(volumes, dtype="float64"))
+        taker = volumes / 2 if taker is None else np.asarray(taker, dtype="float64")
+        return pd.DataFrame(
+            {"open": opens,
+             "high": np.asarray(highs, dtype="float64"),
+             "low": np.asarray(lows, dtype="float64"),
+             "close": closes, "volume": volumes, "taker_buy_base": taker},
+            index=_bar_index(n, step, start),
+            columns=_BAR_COLUMNS,
+        )
+
+    return _from
