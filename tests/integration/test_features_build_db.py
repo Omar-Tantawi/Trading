@@ -208,6 +208,53 @@ def test_rebuild_flag_rewrites_everything(db_conn):
     assert _count(db_conn, "1h") == 48
 
 
+_DECOMPRESSION_LIMIT = "timescaledb.max_tuples_decompressed_per_dml_transaction"
+
+
+def _compress_features_1h(conn):
+    with conn.cursor() as cur:
+        cur.execute("SELECT compress_chunk(c) FROM show_chunks('features_1h') c")
+        cur.execute("SELECT bool_and(is_compressed) FROM timescaledb_information.chunks "
+                    "WHERE hypertable_name = 'features_1h'")
+        assert cur.fetchone()[0] is True
+    conn.commit()
+
+
+def _decompress_features_1h(conn):
+    conn.rollback()
+    with conn.cursor() as cur:
+        cur.execute("SELECT decompress_chunk(c, if_compressed => true) "
+                    "FROM show_chunks('features_1h') c")
+    conn.commit()
+
+
+def test_rebuild_over_compressed_chunks_lifts_the_decompression_limit(
+        db_conn, assert_features_match):
+    # Upserting over compressed rows decompresses them, and TimescaleDB aborts
+    # a transaction that decompresses more rows than this limit (100,000 by
+    # default). Here the limit is 10 and the rebuild rewrites 48 rows.
+    _insert(db_conn, range(0, 2 * DAY_MINUTES))
+    build_features(db_conn, SYMBOL, "1h")
+    _compress_features_1h(db_conn)
+    try:
+        with db_conn.cursor() as cur:
+            cur.execute(f"SET {_DECOMPRESSION_LIMIT} = 10")
+        db_conn.commit()
+
+        result = build_features(db_conn, SYMBOL, "1h", rebuild=True)
+
+        assert result.full is True and result.rows_written == 48
+        expected = compute_features(
+            load_bars(db_conn, SYMBOL, "1h", None, T0 + 48 * HOUR), HOUR)
+        assert_features_match(read_features(db_conn, SYMBOL, "1h"), expected)
+        # The lifted limit ended with the build's transaction.
+        with db_conn.cursor() as cur:
+            cur.execute(f"SHOW {_DECOMPRESSION_LIMIT}")
+            assert cur.fetchone()[0] == "10"
+    finally:
+        _decompress_features_1h(db_conn)
+
+
 def test_build_works_without_prior_aggregate_refresh(db_conn):
     end = T0 + timedelta(days=2)
     # db_conn empties candles_1m but not the aggregates: clear whatever earlier

@@ -23,6 +23,13 @@ log = logging.getLogger(__name__)
 # the peak flat. All batches share one transaction, committed once at the end.
 WRITE_BATCH_ROWS = 100_000
 
+# A rebuild upserts over rows the compression policy has already compressed,
+# which decompresses them, and TimescaleDB aborts a transaction that
+# decompresses more than this many rows (100,000 by default). 0 means no
+# limit. SET LOCAL ends with the write transaction.
+_LIFT_DECOMPRESSION_LIMIT = (
+    "SET LOCAL timescaledb.max_tuples_decompressed_per_dml_transaction = 0")
+
 
 @dataclass
 class BuildResult:
@@ -44,6 +51,12 @@ def _first_1m(conn, symbol: str) -> datetime:
 
 
 def _write_in_batches(conn, symbol: str, timeframe: str, frame) -> int:
+    """Upsert `frame` in batches inside the caller's open transaction, with
+    the decompression limit lifted for that transaction only. Every build
+    does this, not only full ones: an incremental build after a long pause
+    can also land in a chunk that has since been compressed."""
+    with conn.cursor() as cur:
+        cur.execute(_LIFT_DECOMPRESSION_LIMIT)
     written = 0
     for i in range(0, len(frame), WRITE_BATCH_ROWS):
         written += upsert_features(conn, symbol, timeframe,
