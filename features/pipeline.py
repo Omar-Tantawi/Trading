@@ -137,8 +137,15 @@ LOOKBACK_DAYS = 400
 
 
 def lookback_start(last_built: datetime, step: timedelta) -> datetime:
-    """Where an incremental build starts loading bars (spec section 5.3)."""
-    return last_built - max(LOOKBACK_BARS * step, timedelta(days=LOOKBACK_DAYS))
+    """Where an incremental build starts loading bars (spec section 5.3).
+
+    max(400 days, 365 days + 2,100 bars): every atr_pct inside the 365-day
+    percentile window then has 2,100 bars of history behind it, so its seed
+    has decayed on every timeframe. That term is never shorter than 2,100
+    bars, so the spec's plain 2,100-bar term is already covered.
+    """
+    return last_built - max(timedelta(days=LOOKBACK_DAYS),
+                            volatility.VOL_PCT_WINDOW + LOOKBACK_BARS * step)
 
 
 def _missing_value(col: str):

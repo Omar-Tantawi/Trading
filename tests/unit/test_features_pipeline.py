@@ -205,9 +205,14 @@ def test_no_infinities_on_flat_bars_and_zero_volume(make_bars):
 def test_lookback_start():
     last = datetime(2026, 1, 1, tzinfo=timezone.utc)
     assert (LOOKBACK_BARS, LOOKBACK_DAYS) == (2100, 400)
+    # max(400 days, 365 days + 2,100 bars)
+    # 5m: 365 d + 7.3 d; 15m: 365 d + 21.9 d; both under 400 days
     assert last - lookback_start(last, timedelta(minutes=5)) == timedelta(days=400)
-    assert last - lookback_start(last, timedelta(days=1)) == timedelta(days=2100)
-    assert last - lookback_start(last, timedelta(hours=4)) == timedelta(days=400)
+    assert last - lookback_start(last, timedelta(minutes=15)) == timedelta(days=400)
+    # 1h: 365 d + 87.5 d; 4h: 365 d + 350 d; 1d: 365 d + 2,100 d
+    assert last - lookback_start(last, HOUR) == timedelta(days=365, hours=2100)
+    assert last - lookback_start(last, timedelta(hours=4)) == timedelta(days=715)
+    assert last - lookback_start(last, timedelta(days=1)) == timedelta(days=2465)
 
 
 def test_performance_300k_bars(make_bars):
