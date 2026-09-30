@@ -119,3 +119,30 @@ def bars_from():
         )
 
     return _from
+
+
+@pytest.fixture
+def assert_features_match():
+    """Compare two feature frames the way spec section 5.3 defines equal:
+    same index and columns; floats within numpy.isclose(rtol=1e-9, atol=1e-9)
+    with NaN == NaN; integers and text exactly, with NA == NA."""
+
+    def _assert(a, b):
+        pd.testing.assert_index_equal(a.index, b.index)
+        assert list(a.columns) == list(b.columns)
+        for col in a.columns:
+            x, y = a[col], b[col]
+            null_x, null_y = x.isna().to_numpy(), y.isna().to_numpy()
+            assert (null_x == null_y).all(), f"{col}: nulls differ"
+            keep = ~null_x
+            if pd.api.types.is_float_dtype(x) and pd.api.types.is_float_dtype(y):
+                xv = x.to_numpy(dtype="float64")[keep]
+                yv = y.to_numpy(dtype="float64")[keep]
+                bad = ~np.isclose(xv, yv, rtol=1e-9, atol=1e-9)
+                assert not bad.any(), (
+                    f"{col}: {bad.sum()} values differ, e.g. {xv[bad][:3]} vs {yv[bad][:3]}")
+            else:
+                xv, yv = x.to_numpy(dtype=object)[keep], y.to_numpy(dtype=object)[keep]
+                assert (xv == yv).all(), f"{col}: values differ"
+
+    return _assert
