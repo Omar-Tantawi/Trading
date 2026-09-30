@@ -209,8 +209,15 @@ def test_rebuild_flag_rewrites_everything(db_conn):
 
 
 def test_build_works_without_prior_aggregate_refresh(db_conn):
-    # candles are inserted and the aggregates are never refreshed by the test
+    end = T0 + timedelta(days=2)
+    # db_conn empties candles_1m but not the aggregates: clear whatever earlier
+    # tests left materialized, while candles_1m is empty.
+    refresh_aggregates(db_conn, T0, end)
+    assert load_bars(db_conn, SYMBOL, "1h", None, end).empty
+
     _insert(db_conn, range(0, 2 * DAY_MINUTES))
+    # the aggregate does not compute unmaterialized buckets on the fly
+    assert load_bars(db_conn, SYMBOL, "1h", None, end).empty
 
     result = build_features(db_conn, SYMBOL, "1h")
 
@@ -264,6 +271,31 @@ def test_quality_pass_builds_every_timeframe(db_conn):
     rows = {r.timeframe: r.rows_written for r in results}
     assert rows == {"5m": 864, "15m": 288, "1h": 72, "4h": 18, "1d": 3}
     assert all(r.skipped_reason is None and r.full for r in results)
+
+
+def test_one_failing_timeframe_does_not_stop_the_others(db_conn, monkeypatch,
+                                                        caplog):
+    _insert(db_conn, range(0, 3 * DAY_MINUTES))
+    real = build_module.build_features
+
+    def flaky(conn, symbol, timeframe, **kwargs):
+        if timeframe == "1h":
+            raise RuntimeError("boom")
+        return real(conn, symbol, timeframe, **kwargs)
+
+    monkeypatch.setattr(build_module, "build_features", flaky)
+
+    with caplog.at_level(logging.ERROR, logger="features.build"):
+        results = build_symbol(db_conn, SYMBOL)
+
+    by_tf = {r.timeframe: r for r in results}
+    assert list(by_tf) == list(FEATURE_TIMEFRAMES)
+    assert by_tf["1h"].rows_written == 0
+    assert by_tf["1h"].skipped_reason == "error: boom"
+    assert _count(db_conn, "1h") == 0
+    assert {tf: by_tf[tf].rows_written for tf in ("5m", "15m", "4h", "1d")} == {
+        "5m": 864, "15m": 288, "4h": 18, "1d": 3}
+    assert any("1h" in r.getMessage() for r in caplog.records)
 
 
 def test_quality_warn_logs_and_builds(db_conn, caplog):

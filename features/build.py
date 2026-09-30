@@ -113,5 +113,15 @@ def build_symbol(conn, symbol: str,
     if report.verdict == "WARN":
         log.warning("%s: 1m data quality WARN (%.3f%% complete); building "
                     "anyway", symbol, report.completeness_pct)
-    return [build_features(conn, symbol, tf, rebuild=rebuild)
-            for tf in timeframes]
+    results = []
+    for tf in timeframes:
+        # Each (symbol, timeframe) is isolated, like tb backfill: one failure
+        # is recorded and the other timeframes still build.
+        try:
+            results.append(build_features(conn, symbol, tf, rebuild=rebuild))
+        except Exception as exc:
+            conn.rollback()
+            log.exception("%s %s: feature build failed", symbol, tf)
+            results.append(BuildResult(symbol, tf, 0, None, None, False, 0.0,
+                                       f"error: {exc}"))
+    return results
