@@ -100,6 +100,18 @@ def test_trend_uses_warmup_blanked_emas(make_bars):
             f["ema_slope_20"], slope, check_names=False, rtol=1e-12)
 
 
+def test_vol_percentile_starts_after_atr_pct_warmup(make_bars):
+    # atr_pct reaches the percentile already blanked (42 bars), and the
+    # percentile needs 30 more days of history: 42 + 720 bars on 1h. Feeding it
+    # the raw atr_pct would start it 42 bars earlier, at 720.
+    f = compute_features(make_bars(1000), HOUR)
+    first = WARMUP["atr_pct"] + 30 * 24
+    assert first == 762
+    for col in ("vol_pct_365d", "volatility_regime"):
+        assert f[col].iloc[:first].isna().all(), col
+        assert not pd.isna(f[col].iloc[first]), col
+
+
 def test_no_lookahead_prefix_invariance(make_bars, assert_features_match):
     bars = make_bars(3000)
     full = compute_features(bars, HOUR)
