@@ -165,8 +165,11 @@ def test_build_without_candles_is_skipped(db_conn):
 
 
 def test_incremental_equals_rebuild(db_conn, assert_features_match):
-    # 5m: 9 days is 2592 bars, more than the 2100-bar lookback, so the
-    # incremental build really does load a truncated window.
+    # 5m's lookback is 400 days, so on these 10 days the incremental build
+    # loads the whole history: this checks the incremental path through the
+    # database (only rows after last_built are written), not truncation. A
+    # truly truncated window is tested at pipeline level
+    # (test_incremental_window_equals_full*).
     _insert(db_conn, range(0, 9 * DAY_MINUTES))
     assert build_features(db_conn, SYMBOL, "5m").full is True
     _insert(db_conn, range(9 * DAY_MINUTES, 10 * DAY_MINUTES))
