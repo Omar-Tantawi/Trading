@@ -1,8 +1,8 @@
-# AI Trading Buddy — Data Foundation
+# AI Trading Buddy — Data Foundation and Market Features
 
-Verified Binance market-data warehouse. Sub-project 1 of the platform;
-see `docs/superpowers/specs/` for the design and `docs/superpowers/plans/`
-for the implementation plan.
+Verified Binance market-data warehouse (sub-project 1) and the market
+features computed from it (sub-project 2a); see `docs/superpowers/specs/`
+for the designs and `docs/superpowers/plans/` for the implementation plans.
 
 ## First-time setup
 
@@ -71,6 +71,14 @@ for the implementation plan.
 
 ```bash
 .venv\Scripts\tb.exe status
+```
+
+```bash
+.venv\Scripts\tb.exe features build
+```
+
+```bash
+.venv\Scripts\tb.exe analyze BTCUSDT
 ```
 
 The first `backfill` downloads years of 1-minute candles for four symbols
@@ -148,6 +156,9 @@ plain language.
   are bullish, bearish or sideways. It never gives trading advice.
 - `--no-build` prints what is already stored, without building. `SYMBOL` is
   case-insensitive. A symbol with no stored 1m candles exits with an error.
+- When its build fails or is skipped (for example by the quality gate),
+  `tb analyze` still prints the stored state, says it may be out of date,
+  and exits 1.
 - **Timing of a feature row.** A row keyed `open_time = t` describes the bar
   that opens at `t` and **closes** at `t + step` (for 1h, `t + 1 hour`): it
   uses that bar's close, so it is only known at `t + step`. Anything that
