@@ -148,6 +148,11 @@ plain language.
   are bullish, bearish or sideways. It never gives trading advice.
 - `--no-build` prints what is already stored, without building. `SYMBOL` is
   case-insensitive. A symbol with no stored 1m candles exits with an error.
+- **Timing of a feature row.** A row keyed `open_time = t` describes the bar
+  that opens at `t` and **closes** at `t + step` (for 1h, `t + 1 hour`): it
+  uses that bar's close, so it is only known at `t + step`. Anything that
+  joins features to later outcomes (sub-project 3's labels) must line up
+  with `t + step`, not `t`, or it will use the future.
 
 ## Facts worth knowing
 
