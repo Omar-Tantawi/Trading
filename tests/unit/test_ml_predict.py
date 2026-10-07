@@ -26,9 +26,9 @@ def _hp(h, model, note=None, skill=(0.008, 0.003, 0.013)):
 def _state(note=None):
     return PredictionState(
         symbol="BTCUSDT", bar_open_time=BAR, close=84_000.0,
-        predictions=[_hp(h, m, note, (0.001, -0.004, 0.006) if m == "logreg_v1"
+        predictions=[_hp(h, m, note, (0.001, -0.004, 0.006) if m == "logreg_v2"
                          else (0.008, 0.003, 0.013))
-                     for h in (1, 4, 24) for m in ("logreg_v1", "xgb_v1")])
+                     for h in (1, 4, 24) for m in ("logreg_v2", "xgb_v1")])
 
 
 def test_render_lines_and_no_advice_words():

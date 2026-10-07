@@ -46,7 +46,7 @@ def test_train_then_predict_prints_every_horizon(db_conn, cli, tmp_path):
     result = cli.invoke(app, ["predict", "btcusdt", "--no-build"])
     assert result.exit_code == 0, result.output
     for h in (1, 4, 24):
-        for model in ("logreg_v1", "xgb_v1"):
+        for model in ("logreg_v2", "xgb_v1"):
             assert f"next {h}h" in result.output and f"{model}: down" in result.output
     # only the 4h models have a walk-forward run to quote
     assert "no walk-forward run recorded" in result.output

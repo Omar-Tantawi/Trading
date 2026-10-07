@@ -14,7 +14,7 @@ from ml.labels import LABEL_SET
 from ml.models import Model
 
 MODELS_DIR = Path("models")
-PREDICT_MODELS = ("logreg_v1", "xgb_v1")
+PREDICT_MODELS = ("logreg_v2", "xgb_v1")
 
 
 class ArtifactMismatch(Exception):

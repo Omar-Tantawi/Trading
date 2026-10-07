@@ -4,6 +4,9 @@ Every model has the same interface: fit(X_fit, y_fit, X_cal, y_cal) and
 predict_proba(X) -> n x 3 (down, flat, up). After fitting on the fit rows, a
 model fits one temperature on the calibration rows; predict_proba applies it.
 """
+import os
+import warnings
+
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize_scalar
@@ -11,12 +14,15 @@ from scipy.optimize import minimize_scalar
 N_CLASSES = 3
 _FLOOR = 1e-6
 
-LOGREG_PARAMS = {"C": 0.1, "max_iter": 1000}
+# v2: stops after 100 iterations instead of converging (up to 1000). On
+# features of this size full convergence took ~250 iterations and ~40 s per
+# fit without a better test score; stopping early also regularises.
+LOGREG_PARAMS = {"C": 0.1, "max_iter": 100}
 XGB_PARAMS = {
     "objective": "multi:softprob", "num_class": N_CLASSES,
     "max_depth": 4, "learning_rate": 0.05, "subsample": 0.8,
     "colsample_bytree": 0.8, "min_child_weight": 50, "tree_method": "hist",
-    "seed": 0, "nthread": 4, "verbosity": 0,
+    "seed": 0, "nthread": os.cpu_count() or 4, "verbosity": 0,
 }
 XGB_ROUNDS = 300
 
@@ -76,7 +82,7 @@ class Model:
 
 
 class LogReg(Model):
-    name = "logreg_v1"
+    name = "logreg_v2"
 
     def _fit(self, X, y):
         from sklearn.linear_model import LogisticRegression
@@ -93,8 +99,13 @@ class LogReg(Model):
             counts = np.bincount(y, minlength=N_CLASSES) + 1.0
             self.single = counts / counts.sum()
             return
-        self.model = LogisticRegression(**LOGREG_PARAMS).fit(
-            self.scaler.transform(Z), y)
+        from sklearn.exceptions import ConvergenceWarning
+
+        with warnings.catch_warnings():
+            # Stopping at max_iter is deliberate (see LOGREG_PARAMS).
+            warnings.simplefilter("ignore", ConvergenceWarning)
+            self.model = LogisticRegression(**LOGREG_PARAMS).fit(
+                self.scaler.transform(Z), y)
 
     def _raw_proba(self, X):
         if self.single is not None:

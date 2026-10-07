@@ -5,6 +5,7 @@ Each fold trains a fresh model on its fit rows, calibrates on its
 calibration rows and predicts its test rows. Metrics pool all test rows and
 compare each model with base_rate_v1 on exactly the same rows.
 """
+import time
 from dataclasses import dataclass
 from typing import Callable
 
@@ -30,15 +31,21 @@ class EvalResult:
 
 
 def evaluate(ds: Dataset, horizon: int, folds: list[Fold],
-             model_factory: Callable[[], list[Model]] = make_models) -> EvalResult:
+             model_factory: Callable[[], list[Model]] = make_models,
+             progress: Callable[[str], None] | None = None) -> EvalResult:
+    """`progress`, if given, receives one line per test period with the
+    seconds each model took."""
     parts = []
-    for fold in folds:
+    for i, fold in enumerate(folds, 1):
+        timings = []
         X_fit, y_fit = ds.X.iloc[fold.fit_idx], ds.y[fold.fit_idx]
         X_cal, y_cal = ds.X.iloc[fold.cal_idx], ds.y[fold.cal_idx]
         X_test = ds.X.iloc[fold.test_idx]
         for model in model_factory():
+            began = time.monotonic()
             model.fit(X_fit, y_fit, X_cal, y_cal)
             p = model.predict_proba(X_test)
+            timings.append(f"{model.name} {time.monotonic() - began:.0f}s")
             parts.append(pd.DataFrame({
                 "model": model.name,
                 "symbol": ds.symbol[fold.test_idx],
@@ -47,6 +54,10 @@ def evaluate(ds: Dataset, horizon: int, folds: list[Fold],
                 "label": ds.y[fold.test_idx],
                 "p_down": p[:, 0], "p_flat": p[:, 1], "p_up": p[:, 2],
             }))
+        if progress:
+            progress(f"  next {horizon}h: period {i}/{len(folds)} "
+                     f"({fold.test_start:%Y-%m}), {len(fold.fit_idx):,} training "
+                     f"rows: " + ", ".join(timings))
     pred = pd.concat(parts, ignore_index=True)
     metrics = summarise(pred, horizon)
     metrics["folds"] = [{

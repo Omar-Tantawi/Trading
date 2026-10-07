@@ -1,4 +1,5 @@
 """tb ml evaluate / runs / report against the test database."""
+import re
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -55,6 +56,8 @@ def test_evaluate_runs_report_and_holdout(db_conn, cli):
     result = cli.invoke(app, ["ml", "evaluate", "--horizon", "4"])
     assert result.exit_code == 0, result.output
     assert "next 4h" in result.output and "xgb_v1: skill" in result.output
+    assert "data loaded" in result.output and "period 1/" in result.output
+    assert re.search(r"\[\d\d:\d\d\] done", result.output)
 
     listed = cli.invoke(app, ["ml", "runs"])
     assert listed.exit_code == 0 and "walk_forward" in listed.output

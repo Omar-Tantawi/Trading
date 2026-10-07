@@ -81,7 +81,7 @@ def test_missing_class_still_three_columns(model):
 
 def test_model_order():
     assert [m.name for m in make_models()] == [
-        "base_rate_v1", "ema_cross_v1", "rsi_v1", "macd_v1", "logreg_v1", "xgb_v1"]
+        "base_rate_v1", "ema_cross_v1", "rsi_v1", "macd_v1", "logreg_v2", "xgb_v1"]
 
 
 def test_base_rate_never_zero_for_absent_class():
@@ -96,3 +96,19 @@ def test_logreg_single_class_falls_back_to_base_rate():
     y = np.zeros(len(X), dtype=int)
     p = LogReg().fit(X[:400], y[:400], X[400:500], y[400:500]).predict_proba(X[500:])
     assert p.shape == (100, 3) and np.allclose(p.sum(1), 1.0)
+
+
+def test_speed_settings():
+    import os
+    from ml.models import LOGREG_PARAMS, XGB_PARAMS
+    assert LOGREG_PARAMS == {"C": 0.1, "max_iter": 100}
+    assert XGB_PARAMS["nthread"] == (os.cpu_count() or 4)
+
+
+def test_logreg_early_stop_is_silent():
+    import warnings
+    from ml.models import LogReg
+    X, y = _random_xy(3000)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        LogReg().fit(X[:2000], y[:2000], X[2000:], y[2000:])

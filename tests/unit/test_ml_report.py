@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from ml.report import render_report, verdict
 
 ADVICE = re.compile(r"\b(buy|sell|long|short|enter|exit)\b", re.IGNORECASE)
-NAMES = ("base_rate_v1", "ema_cross_v1", "rsi_v1", "macd_v1", "logreg_v1", "xgb_v1")
+NAMES = ("base_rate_v1", "ema_cross_v1", "rsi_v1", "macd_v1", "logreg_v2", "xgb_v1")
 
 
 def test_verdict_phrasings():

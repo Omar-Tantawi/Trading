@@ -52,7 +52,7 @@ def walk():
 def test_random_walk_has_no_skill(walk):
     _, _, ds = walk
     m = _run(ds)
-    for name in ("logreg_v1", "xgb_v1"):
+    for name in ("logreg_v2", "xgb_v1"):
         assert m[name]["skill_lo"] <= 0.0, (name, m[name]["skill"], m[name]["skill_lo"])
 
 

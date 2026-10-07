@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 
 import typer
@@ -391,8 +392,17 @@ def ml_evaluate_cmd(
     horizons = _horizons(horizon)
     _setup_logging()
     symbols = get_settings().symbols
+    began = time.monotonic()
+
+    def say(text: str) -> None:
+        minutes, seconds = divmod(int(time.monotonic() - began), 60)
+        console.print(f"[{minutes:02d}:{seconds:02d}] {text}", markup=False,
+                      highlight=False, soft_wrap=True)
+
     with connect() as conn:
+        say("checking data quality and loading features ...")
         data = _ml_data(conn, symbols)
+        say("data loaded")
         for h in horizons:
             ds = build_dataset(data, h, tuple(symbols))
             if holdout:
@@ -403,7 +413,9 @@ def ml_evaluate_cmd(
             if not folds:
                 console.print(f"next {h}h: no test rows; nothing evaluated")
                 continue
-            result = ml_evaluate(ds, h, folds)
+            say(f"next {h}h: {len(ds.X):,} rows, {len(folds)} test periods")
+            result = ml_evaluate(ds, h, folds, progress=say)
+            say(f"next {h}h: saving {len(result.predictions):,} predictions")
             run_id = ml_store.save_run(
                 conn, kind="holdout" if holdout else "walk_forward", horizon=h,
                 symbols=symbols, data_end=_data_end(ds.tau, folds, h),
@@ -413,6 +425,7 @@ def ml_evaluate_cmd(
             console.print(render_report(ml_store.load_run(conn, run_id)),
                           markup=False, highlight=False, soft_wrap=True)
             console.print()
+        say("done")
 
 
 @ml_app.command("runs")

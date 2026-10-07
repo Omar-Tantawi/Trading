@@ -2,7 +2,7 @@
 
 BASE = "base_rate_v1"
 MODEL_ORDER = ("base_rate_v1", "ema_cross_v1", "rsi_v1", "macd_v1",
-               "logreg_v1", "xgb_v1")
+               "logreg_v1", "logreg_v2", "xgb_v1")
 
 
 def _ordered(models: dict) -> list[tuple[str, dict]]:

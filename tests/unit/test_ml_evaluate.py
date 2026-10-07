@@ -33,8 +33,19 @@ def test_predictions_and_summary():
     assert m["horizon"] == 4 and m["n_test"] == n_test
     assert m["models"]["base_rate_v1"]["skill"] == 0.0
     assert abs(sum(m["class_shares"].values()) - 1.0) < 1e-9
-    first = m["models"]["logreg_v1"]["per_fold"][0]
+    first = m["models"]["logreg_v2"]["per_fold"][0]
     assert set(first) == {"fold", "test_start", "n", "skill"}
-    assert set(m["models"]["logreg_v1"]["per_symbol"]) == {"BTCUSDT", "SOLUSDT"}
-    sol_folds = {f["fold"] for f in m["models"]["logreg_v1"]["per_fold"]}
+    assert set(m["models"]["logreg_v2"]["per_symbol"]) == {"BTCUSDT", "SOLUSDT"}
+    sol_folds = {f["fold"] for f in m["models"]["logreg_v2"]["per_fold"]}
     assert sol_folds == {f.number for f in folds}
+
+
+def test_progress_lines():
+    data = {"BTCUSDT": random_walk_symbol(1, "2020-01-01", 4500)}
+    ds = build_dataset(data, 4)
+    folds = walk_forward_folds(ds.tau, 4, CFG)
+    lines = []
+    evaluate(ds, 4, folds, lambda: [BaseRate(), LogReg()], progress=lines.append)
+    assert len(lines) == len(folds)
+    assert lines[0].startswith(f"  next 4h: period 1/{len(folds)} (2020-04)")
+    assert "base_rate_v1" in lines[0] and "logreg_v2" in lines[0] and "s" in lines[0]

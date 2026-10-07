@@ -211,12 +211,16 @@ on the same metrics, with no hand-picked probabilities.
 
 ### 5.2 Machine-learning models
 
-- `logreg_v1`: multinomial logistic regression (scikit-learn), columns
-  standardised on fit rows, L2 penalty `C = 0.1`, `max_iter = 1000`.
+- `logreg_v2`: multinomial logistic regression (scikit-learn), columns
+  standardised on fit rows, L2 penalty `C = 0.1`, `max_iter = 100`.
+  *Updated 2026-10-07 after the first real-data run took over an hour:*
+  `logreg_v1` (`max_iter = 1000`) needed ~250 iterations and ~40 s per fit
+  without a better test score; v2 stops at 100 iterations (early stopping
+  regularises too). Runs 1–3 hold `logreg_v1` results.
 - `xgb_v1`: XGBoost `multi:softprob`, `n_estimators = 300`,
   `max_depth = 4`, `learning_rate = 0.05`, `subsample = 0.8`,
   `colsample_bytree = 0.8`, `min_child_weight = 50`, `tree_method = hist`,
-  `random_state = 0`, `n_jobs = 4`. No early stopping (it would need
+  `random_state = 0`, all CPU cores (`n_jobs = os.cpu_count()`; was 4). No early stopping (it would need
   another slice and is a form of tuning).
 
 *Ruling:* fixed, conservative settings (shallow trees, slow learning, large
@@ -313,7 +317,7 @@ model whose `FEATURE_SET`, `LABEL_SET` or column list differs from the code.
 - `tb ml train`: as §7.2; prints what was saved.
 - `tb predict SYMBOL [--no-build]`: incremental feature build for the
   symbol (as `tb analyze`), then for each horizon and for `xgb_v1` and
-  `logreg_v1`: the probabilities for the newest closed 1h bar, what "up" and
+  `logreg_v2`: the probabilities for the newest closed 1h bar, what "up" and
   "down" mean in price ("above 84,600 at 13:00 UTC"), and the measured skill
   with its CI from the run named in the artifact. If that skill's CI
   includes 0, the line says the model has not shown skill on unseen data.
@@ -326,6 +330,8 @@ prints it. No advice words (test).
 ### 7.4 Performance targets
 
 - `tb ml evaluate` for all three horizons on the PC: under 30 minutes.
+  The first real run took over an hour; it now prints a timestamped line per
+  test period with each model's seconds, so the slow step is visible.
 - `tb predict`: under 30 seconds after a recent build.
 
 ## 8. Testing
@@ -352,7 +358,7 @@ prints it. No advice words (test).
 1. **Random walk, no skill.** Run the real 2a pipeline on several thousand
    bars of a synthetic random walk per symbol (1h, 4h and 1d from the same
    1m-equivalent path), build the dataset, run walk-forward with
-   `logreg_v1` and `xgb_v1`. The skill CI must include 0 or lie below it.
+   `logreg_v2` and `xgb_v1`. The skill CI must include 0 or lie below it.
    A leak anywhere (labels, joins, purging, folds) shows up as skill.
 2. **A leak is caught.** Same data plus a column holding the future return
    `r`: skill must be large (> 20 %). This proves canary 1 can fail.

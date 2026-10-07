@@ -19,11 +19,11 @@ def _fitted():
 def test_save_load_round_trip(tmp_path):
     model, X = _fitted()
     path = save_model(model, 4, {"run_id": 3, "symbols": ["BTCUSDT"]}, tmp_path)
-    assert path == tmp_path / "logreg_v1_h4"
-    back, meta = load_model("logreg_v1", 4, tmp_path)
+    assert path == tmp_path / "logreg_v2_h4"
+    back, meta = load_model("logreg_v2", 4, tmp_path)
     assert np.allclose(back.predict_proba(X), model.predict_proba(X))
     assert meta["run_id"] == 3 and meta["columns"] == list("abcd")
-    assert meta["horizon"] == 4 and meta["model"] == "logreg_v1"
+    assert meta["horizon"] == 4 and meta["model"] == "logreg_v2"
 
 
 def test_missing_model_raises(tmp_path):
@@ -38,4 +38,4 @@ def test_load_refuses_other_feature_set(tmp_path):
     meta["feature_set"] += 1
     (path / "meta.json").write_text(json.dumps(meta))
     with pytest.raises(ArtifactMismatch, match="feature set"):
-        load_model("logreg_v1", 1, tmp_path)
+        load_model("logreg_v2", 1, tmp_path)

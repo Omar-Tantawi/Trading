@@ -166,8 +166,14 @@ superpowers:executing-plans; ledger in the git-ignored `.superpowers/`).
   Accuracy equals "always flat" (65 %): the gain is in better-shaded
   probabilities, not in more correct top picks. Not yet known whether the
   skill is about direction or only about how much the price moves, nor
-  whether it is worth anything after fees (sub-project 4). Runtime not yet
-  reported. Holdout not yet used.
+  whether it is worth anything after fees (sub-project 4). Holdout not yet
+  used.
+- **Runtime: over an hour** on the PC (target < 30 min). Cloud profiling at
+  full size (synthetic, 4 cores): per fit, logreg ~40 s (≈250 iterations)
+  and xgb ~35 s; saving ~20 s per horizon. Fix: `logreg_v2` (`max_iter`
+  100, same test score in profiling), XGBoost on all cores, and progress
+  lines with timings. Cloud estimate after the fix: ~8.6 min per horizon on
+  4 cores (~26 min total); the PC time is not yet measured.
 - Fixed after the run: the report printed models in jsonb key order; now a
   fixed order (`ml/report.py`).
 
