@@ -2,7 +2,8 @@
 
 **Written:** 2026-10-07. Replaces the 2026-09-29 handoff, which described
 sub-project 1 (now merged into `master`).
-**Branch:** `master`. Sub-project 2a was merged on 2026-10-07 (`771af81`).
+**Branch:** `feat/prediction-ml-3` (sub-project 3, built, not merged).
+Sub-project 2a was merged into `master` on 2026-10-07 (`771af81`).
 
 > Trust `git log` and the spec over this document if they ever disagree.
 
@@ -28,7 +29,8 @@ and vision-model parts are out of scope).
 1. Data foundation: **done, merged.**
 2. Market intelligence. **2a (features) is done and merged**;
    2b (Market Profile, from `docs/research/2026-09-23-market-profile-hypotheses.md`) comes later.
-3. Prediction ML (baselines, XGBoost, walk-forward, calibration).
+3. Prediction ML (baselines, XGBoost, walk-forward, calibration). **Built on
+   `feat/prediction-ml-3`; real-data run pending (§6).**
    3.5. Minimal read-only dashboard.
 4. Backtesting. 5. Signals, risk and portfolio. 6. Bot monitoring.
 7. Bot advisor. 8. LLM assistant (the user picks the LLM then).
@@ -44,6 +46,7 @@ Each sub-project gets its own brainstorm → spec → plan → build cycle using
 |---|---|
 | Sub-project 1 spec / plan | `docs/superpowers/specs/2026-09-23-data-foundation-design.md`, `docs/superpowers/plans/2026-09-23-data-foundation.md` |
 | Sub-project 2a spec (binding) / plan | `docs/superpowers/specs/2026-09-30-market-intelligence-2a-design.md`, `docs/superpowers/plans/2026-09-30-market-intelligence-2a.md` |
+| Sub-project 3 spec / plan | `docs/superpowers/specs/2026-10-07-prediction-ml-3-design.md`, `docs/superpowers/plans/2026-10-07-prediction-ml-3.md` |
 | Market Profile hypotheses (for 2b) | `docs/research/2026-09-23-market-profile-hypotheses.md` |
 | Operator runbook | `README.md` |
 
@@ -60,8 +63,13 @@ PC. Everything a cloud session needs from it is copied into §5 and §6 below.
   pandas 3.0 and NumPy 2.x are runtime dependencies.
 - **The real market data (~17.5 M 1-minute candles) exists only on the PC.**
   A cloud session has none of it. It can run the offline unit tests
-  (`pytest tests/unit`); the `-m db` tests need a TimescaleDB 2.30.1 instance
-  reachable through `TEST_DATABASE_URL` (see `.env.example`).
+  (`pytest tests/unit`). The `-m db` tests need a TimescaleDB 2.30.1 instance:
+  on 2026-10-07 a cloud session ran one by starting `dockerd` and
+  `docker run -d -p 127.0.0.1:5433:5432 -e POSTGRES_USER=tb
+  -e POSTGRES_PASSWORD=tb_local_dev -e POSTGRES_DB=trading_buddy_test
+  timescale/timescaledb:2.30.1-pg16 postgres -c shared_preload_libraries=timescaledb`
+  (an empty test database, not the user's data). The Binance network test
+  cannot reach Binance from the cloud.
 - Symbols: BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT. Timeframes 5m, 15m, 1h, 4h, 1d
   are continuous aggregates of `candles_1m`; features live in `features_<tf>`.
 
@@ -83,6 +91,10 @@ pass, 105 `-m db` tests pass.
 4. The user's own check, done 2026-10-07: Binance's BTCUSDT 1h RSI(14) and
    EMA(200) match `tb analyze` (bar 2026-10-07 07:00 UTC: RSI 32.28,
    EMA 200 84,928.30). Data was caught up to 2026-10-07 08:27 UTC.
+   A second read the same day gave RSI 32.4 and close/EMA 200 − 1 = −0.92 %
+   (matching `tb analyze`), but quoted prices about 1,000 lower (close
+   83,140, EMA 83,912); the user was asked to re-read the digits. Not a code
+   question: the indicator values agree either way.
 
 ### Rulings made during 2a (each with its cost if wrong)
 
@@ -115,11 +127,38 @@ test, a "failed mid-build leaves no partial writes" test); unescaped Rich
 markup for a user-supplied `--symbol`; the 300k-bar performance test sits in
 the default unit suite (~1.2 s).
 
+## 5b. Current state of sub-project 3 (prediction ML)
+
+Agreed with the user: target up / down / flat with an ATR-scaled threshold
+(spec option A); horizons 1h, 4h, 24h on 1h bars, all four coins. Spec and
+plan are written; all 10 plan tasks are built (executed inline,
+superpowers:executing-plans; ledger in the git-ignored `.superpowers/`).
+
+- New package `ml/`, migration `005_ml.sql`, commands `tb ml evaluate`,
+  `tb ml runs`, `tb ml report`, `tb ml train`, `tb predict`.
+- Last count (cloud session, 2026-10-07): **347 tests pass** in the default
+  run (includes 115 `-m db` tests against a cloud TimescaleDB 2.30.1
+  container); only the Binance network test was deselected.
+- Leakage canaries (`tests/unit/test_ml_leakage.py`, ~90 s, marked `slow`):
+  random walk shows no skill (logreg −9.4 %, xgb −3.9 %, both CIs below 0:
+  overfitting small synthetic data, the safe direction); a leaked future
+  return and a 4h join made before the bar closes are both caught; a planted
+  signal is found (xgb +7.3 %).
+- **Not yet run on real data.** Nothing about real skill is known yet.
+
 ## 6. Next steps
 
-2a is verified, the rulings were given to the user, and it is merged into
-`master`. Next: start the next piece (2b Market Profile, or sub-project 3
-prediction ML; ask the user which) with **superpowers:brainstorming**.
+1. Whole-branch review of `feat/prediction-ml-3` (executing-plans final
+   review), fixes if any.
+2. **User, on the PC** (spec §8.4): `git pull`, `pip install -e ".[dev]"`
+   (adds scikit-learn, xgboost, joblib), `tb db upgrade`, `tb features
+   build`, `tb ml evaluate`. Record the time (target < 30 min) and every
+   model's skill and CI here, whatever they are.
+3. Only after reading that report together, and with the user's agreement:
+   `tb ml evaluate --holdout` **once**.
+4. `tb ml train`, then `tb predict BTCUSDT`.
+5. Give the user the sub-project 3 rulings, then
+   superpowers:finishing-a-development-branch. **Ask before merging.**
 
 ## 7. Open questions waiting on the user
 
