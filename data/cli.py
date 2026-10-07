@@ -22,8 +22,12 @@ from features.pipeline import FEATURE_TIMEFRAMES
 from features.summary import market_state
 from ml import store as ml_store
 from ml.dataset import build_dataset
+from ml.artifacts import PREDICT_MODELS, ArtifactMismatch, save_model
 from ml.evaluate import evaluate as ml_evaluate
-from ml.folds import DEFAULT_FOLDS, holdout_fold, walk_forward_folds
+from ml.folds import DEFAULT_FOLDS, final_split, holdout_fold, walk_forward_folds
+from ml.models import make_models
+from ml.predict import prediction_state
+from ml.predict import render as render_prediction
 from ml.labels import HORIZONS
 from ml.load import StaleFeaturesError, check_fresh, load_symbol_data, run_config
 from ml.report import render_report
@@ -432,3 +436,64 @@ def ml_report_cmd(run_id: int = typer.Argument(..., help="From tb ml runs")):
         console.print(f"[red]no run {run_id}[/red]")
         raise typer.Exit(code=1)
     console.print(render_report(run), markup=False, highlight=False, soft_wrap=True)
+
+
+@ml_app.command("train")
+def ml_train_cmd():
+    """Fit the prediction models on all labelled history and save them."""
+    _setup_logging()
+    symbols = get_settings().symbols
+    trained_at = datetime.now(timezone.utc)
+    with connect() as conn:
+        data = _ml_data(conn, symbols)
+        for h in HORIZONS:
+            ds = build_dataset(data, h, tuple(symbols))
+            fit, cal = final_split(ds.tau, h, ML_FOLDS.cal_fraction)
+            run_id = ml_store.latest_run_id(conn, h)
+            for model in make_models():
+                if model.name not in PREDICT_MODELS:
+                    continue
+                model.fit(ds.X.iloc[fit], ds.y[fit], ds.X.iloc[cal], ds.y[cal])
+                path = save_model(model, h, {
+                    "symbols": list(symbols), "run_id": run_id,
+                    "train_start": ds.tau.min().isoformat(),
+                    "train_end": ds.tau.max().isoformat(),
+                    "trained_at": trained_at.isoformat(),
+                })
+                console.print(f"next {h}h {model.name}: {len(fit) + len(cal):,} rows "
+                              f"to {ds.tau.max():%Y-%m-%d %H:%M} UTC -> {path}",
+                              markup=False, soft_wrap=True)
+
+
+@app.command()
+def predict(
+    symbol: str = typer.Argument(..., help="For example BTCUSDT"),
+    no_build: bool = typer.Option(
+        False, "--no-build", help="Use the stored features without building"),
+):
+    """Print the current probabilities for one symbol (not advice)."""
+    _setup_logging()
+    symbol = symbol.upper()
+    with connect() as conn:
+        if last_candle_time(conn, symbol) is None:
+            console.print(f"[red]{escape(symbol)}: no 1m candles stored; "
+                          "run tb backfill first[/red]", soft_wrap=True)
+            raise typer.Exit(code=1)
+        failed = False
+        if not no_build:
+            failed = _build_symbols(conn, [symbol], FEATURE_TIMEFRAMES, False)
+        try:
+            state = prediction_state(conn, symbol)
+        except FileNotFoundError:
+            console.print("no saved models; run `tb ml train` first", markup=False)
+            raise typer.Exit(code=1)
+        except ArtifactMismatch as exc:
+            console.print(f"{exc}\nrun `tb ml train` again", markup=False,
+                          soft_wrap=True)
+            raise typer.Exit(code=1)
+    console.print(render_prediction(state), markup=False, highlight=False,
+                  soft_wrap=True)
+    if failed:
+        console.print("[red]the build failed or was skipped; the probabilities "
+                      "above may be out of date[/red]")
+        raise typer.Exit(code=1)
