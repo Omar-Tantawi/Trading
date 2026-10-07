@@ -249,9 +249,10 @@ Per (horizon, model), over all walk-forward test rows pooled, and per fold:
   observed frequency|. Reliability bins are stored for the dashboard.
 - **Skill** = 1 − logloss(model) / logloss(base_rate_v1), on the same rows.
   Positive means better than knowing nothing.
-- **95 % confidence interval for skill:** moving-block bootstrap over the
-  test rows in τ order, block length 1 week (168 hourly decision times,
-  all symbols at those times together), 1,000 resamples, fixed seed. Blocks
+- **95 % confidence interval for skill:** block bootstrap over the test
+  rows: rows are grouped into calendar weeks of τ (all symbols together),
+  weeks are resampled with replacement, 1,000 resamples, fixed seed, and
+  the 2.5th and 97.5th percentiles of the resampled skill are the interval. Blocks
   keep the autocorrelation that overlapping 24h labels create, which a
   plain bootstrap would ignore and so report false certainty.
 
@@ -293,8 +294,8 @@ run.
 
 `tb ml train` fits each model per horizon on **all labelled rows** available
 (this is for current use; its quality was measured by `evaluate`) and saves
-to `models/<model>_h<H>/` (git-ignored): the model file (XGBoost JSON or
-scikit-learn via `joblib`), the temperature, and `meta.json` with model
+to `models/<model>_h<H>/` (git-ignored): the fitted model object (with its
+temperature) saved with `joblib`, and `meta.json` with model
 name, horizon, `LABEL_SET`, `FEATURE_SET`, the column list, the training
 range, the time of training, and the `run_id` of the latest walk-forward
 run for that horizon (whose skill `tb predict` quotes). Loading refuses a
