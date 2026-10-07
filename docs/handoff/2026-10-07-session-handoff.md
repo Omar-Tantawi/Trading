@@ -152,14 +152,28 @@ superpowers:executing-plans; ledger in the git-ignored `.superpowers/`).
   overfitting small synthetic data, the safe direction); a leaked future
   return and a 4h join made before the bar closes are both caught; a planted
   signal is found (xgb +7.3 %).
-- **Not yet run on real data.** Nothing about real skill is known yet.
+- **First real-data run (walk-forward, 2026-10-07, user's PC; runs 1–3).**
+  Test periods 2020-01 to 2025-10, about 195k test rows per horizon. Skill
+  vs the base rate with 95 % CI:
+
+  | Horizon | Outcomes (down/flat/up) | xgb_v1 | logreg_v1 | best rule baseline |
+  |---|---|---|---|---|
+  | 1h | 17 / 65 / 18 % | **+1.3 % (+1.2 … +1.5)**, positive in 12/12 periods | +0.7 % (+0.5 … +0.9) | rsi +0.2 % |
+  | 4h | 17 / 65 / 18 % | **+0.8 % (+0.6 … +1.0)**, positive in 11/12 | −0.4 % (−0.8 … −0.1) | ~+0.1 % |
+  | 24h | 19 / 60 / 21 % | −0.6 % (−1.5 … +0.2): none | −4.2 % (−5.9 … −2.5); −31.7 % in 2021H1 | ~0 % |
+
+  Reading: small, stable, measurable skill at 1h and 4h; none at 24h.
+  Accuracy equals "always flat" (65 %): the gain is in better-shaded
+  probabilities, not in more correct top picks. Not yet known whether the
+  skill is about direction or only about how much the price moves, nor
+  whether it is worth anything after fees (sub-project 4). Runtime not yet
+  reported. Holdout not yet used.
+- Fixed after the run: the report printed models in jsonb key order; now a
+  fixed order (`ml/report.py`).
 
 ## 6. Next steps
 
-1. **User, on the PC** (spec §8.4): `git pull`, `pip install -e ".[dev]"`
-   (adds scikit-learn, xgboost, joblib), `tb db upgrade`, `tb features
-   build`, `tb ml evaluate`. Record the time (target < 30 min) and every
-   model's skill and CI here, whatever they are.
+1. Done: the first `tb ml evaluate` on real data (results above).
 2. Only after reading that report together, and with the user's agreement:
    `tb ml evaluate --holdout` **once**.
 3. `tb ml train`, then `tb predict BTCUSDT`.

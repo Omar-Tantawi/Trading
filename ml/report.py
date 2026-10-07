@@ -1,6 +1,15 @@
 """The evaluation report (spec section 6): measurement, never advice."""
 
 BASE = "base_rate_v1"
+MODEL_ORDER = ("base_rate_v1", "ema_cross_v1", "rsi_v1", "macd_v1",
+               "logreg_v1", "xgb_v1")
+
+
+def _ordered(models: dict) -> list[tuple[str, dict]]:
+    """Models in report order. Stored metrics come back from a jsonb column,
+    which does not keep key order."""
+    rank = {name: i for i, name in enumerate(MODEL_ORDER)}
+    return sorted(models.items(), key=lambda kv: (rank.get(kv[0], len(rank)), kv[0]))
 
 
 def _pct(v: float) -> str:
@@ -19,6 +28,7 @@ def verdict(skill: float, lo: float, hi: float) -> str:
 def render_report(run: dict) -> str:
     m = run["metrics"]
     h = run["horizon"]
+    models = _ordered(m["models"])
     lines = [
         f"Run {run['run_id']} ({run['kind'].replace('_', '-')}), next {h}h, "
         f"{', '.join(run['symbols'])}; data to "
@@ -36,25 +46,25 @@ def render_report(run: dict) -> str:
     lines.append("")
     lines.append(f"{'model':<14}{'log loss':>9}{'skill':>8}{'95% CI':>18}"
                  f"{'Brier':>8}{'acc':>7}{'ECE':>7}")
-    for name, s in m["models"].items():
+    for name, s in models:
         ci = "-" if name == BASE else f"{_pct(s['skill_lo'])}..{_pct(s['skill_hi'])}"
         lines.append(f"{name:<14}{s['log_loss']:>9.4f}{_pct(s['skill']):>8}"
                      f"{ci:>18}{s['brier']:>8.4f}{s['accuracy']:>7.1%}{s['ece']:>7.3f}")
     lines.append("")
     lines.append("Skill per test period (does it hold up over time?):")
-    for name, s in m["models"].items():
+    for name, s in models:
         if name == BASE:
             continue
         lines.append(f"  {name:<14}" + " ".join(
             f"{f['test_start'][:7]}:{_pct(f['skill'])}" for f in s["per_fold"]))
     lines.append("Skill per symbol:")
-    for name, s in m["models"].items():
+    for name, s in models:
         if name == BASE:
             continue
         lines.append(f"  {name:<14}" + " ".join(
             f"{sym} {_pct(v)}" for sym, v in s["per_symbol"].items()))
     lines.append("")
-    for name, s in m["models"].items():
+    for name, s in models:
         if name != BASE:
             lines.append(f"{name}: {verdict(s['skill'], s['skill_lo'], s['skill_hi'])}")
     lines.append("")

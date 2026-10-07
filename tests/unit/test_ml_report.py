@@ -57,3 +57,13 @@ def test_holdout_warning_from_second_run():
     assert ("Warning: the holdout has now been evaluated 2 times; this result "
             "is no longer an unbiased estimate.") in render_report(_run("holdout", 2))
     assert "Warning" not in render_report(_run("walk_forward", 5))
+
+
+def test_models_in_fixed_order_whatever_the_stored_order():
+    # PostgreSQL jsonb returns object keys sorted by length, not insertion order.
+    run = _run()
+    models = run["metrics"]["models"]
+    run["metrics"]["models"] = {k: models[k] for k in sorted(models, key=len)}
+    text = render_report(run)
+    table = [l.split()[0] for l in text.splitlines() if l.split() and l.split()[0] in NAMES]
+    assert table[:6] == list(NAMES)
