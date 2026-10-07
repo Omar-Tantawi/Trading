@@ -1,8 +1,8 @@
-# AI Trading Buddy — Data Foundation
+# AI Trading Buddy — Data Foundation and Market Features
 
-Verified Binance market-data warehouse. Sub-project 1 of the platform;
-see `docs/superpowers/specs/` for the design and `docs/superpowers/plans/`
-for the implementation plan.
+Verified Binance market-data warehouse (sub-project 1) and the market
+features computed from it (sub-project 2a); see `docs/superpowers/specs/`
+for the designs and `docs/superpowers/plans/` for the implementation plans.
 
 ## First-time setup
 
@@ -73,6 +73,14 @@ for the implementation plan.
 .venv\Scripts\tb.exe status
 ```
 
+```bash
+.venv\Scripts\tb.exe features build
+```
+
+```bash
+.venv\Scripts\tb.exe analyze BTCUSDT
+```
+
 The first `backfill` downloads years of 1-minute candles for four symbols
 and takes a while. It is resumable: stop it with Ctrl+C and re-run.
 
@@ -110,6 +118,52 @@ interrupted (Ctrl+C):
 
 `tb quality --timeframe 1h` (or any non-1m timeframe) takes its expected
 range from `candles_1m`, so an aggregate that is missing history FAILs.
+
+## Market features (sub-project 2a)
+
+From the stored candles, `tb features build` computes a set of market
+features (returns, EMAs, RSI, MACD, ATR, ADX, swing structure, volatility
+and volume measures, regime labels) for 5m, 15m, 1h, 4h and 1d, and stores
+them in the `features_*` tables. `tb analyze` shows the current state in
+plain language.
+
+```bash
+.venv\Scripts\tb.exe features build
+.venv\Scripts\tb.exe features build --symbol BTCUSDT --timeframe 1h
+.venv\Scripts\tb.exe features build --rebuild
+.venv\Scripts\tb.exe analyze BTCUSDT
+.venv\Scripts\tb.exe analyze BTCUSDT --no-build
+```
+
+- **Built on demand.** Features exist only after you run `tb features build`
+  (or `tb analyze`, which builds first). Nothing keeps them fresh yet; the
+  live collector does not update them.
+- **Incremental.** A build only computes the bars that are new since the
+  last one, so re-running it is cheap and always safe. Only bars whose whole
+  time span is already covered by stored 1m candles are built.
+- **`--rebuild` recomputes everything from full history.** Run it after
+  repairing holes in the candle data (for example by re-running
+  `tb backfill`): bars that were already built over a hole are not
+  recomputed automatically.
+- **Quality gate.** A symbol whose 1m data fails `tb quality` is skipped,
+  and the command exits non-zero. Each symbol and timeframe is isolated: one
+  failure does not stop the others.
+- **STALE.** `tb analyze` marks a timeframe **STALE** when its newest
+  feature bar is older than 2 x the timeframe plus 5 minutes (for 1h: more
+  than 2 hours 5 minutes). It means the features have not been built
+  recently, not that anything is wrong. Run `tb features build`.
+- `tb analyze` describes the market on each timeframe and counts how many
+  are bullish, bearish or sideways. It never gives trading advice.
+- `--no-build` prints what is already stored, without building. `SYMBOL` is
+  case-insensitive. A symbol with no stored 1m candles exits with an error.
+- When its build fails or is skipped (for example by the quality gate),
+  `tb analyze` still prints the stored state, says it may be out of date,
+  and exits 1.
+- **Timing of a feature row.** A row keyed `open_time = t` describes the bar
+  that opens at `t` and **closes** at `t + step` (for 1h, `t + 1 hour`): it
+  uses that bar's close, so it is only known at `t + step`. Anything that
+  joins features to later outcomes (sub-project 3's labels) must line up
+  with `t + step`, not `t`, or it will use the future.
 
 ## Facts worth knowing
 

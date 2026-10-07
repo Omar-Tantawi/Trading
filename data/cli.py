@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from data.collectors.backfill import ArchiveDownloader, backfill_symbol
@@ -14,12 +15,17 @@ from data.config import get_settings
 from data.quality.checks import STEP, run_quality_checks
 from data.storage.db import connect, run_migrations
 from data.storage.repository import last_candle_time, refresh_aggregates, upsert_symbol
+from features.build import BuildResult, build_symbol
+from features.pipeline import FEATURE_TIMEFRAMES
+from features.summary import market_state
 
 app = typer.Typer(help="AI Trading Buddy data foundation")
 db_app = typer.Typer(help="Database maintenance")
 symbols_app = typer.Typer(help="Symbol metadata")
+features_app = typer.Typer(help="Market feature engine")
 app.add_typer(db_app, name="db")
 app.add_typer(symbols_app, name="symbols")
+app.add_typer(features_app, name="features")
 console = Console()
 
 # A 1m feed more than this far behind is stale, not merely quiet.
@@ -194,6 +200,96 @@ def quality(
     if failed:
         # Scripts and schedulers see a FAIL through the exit code.
         console.print(f"[red]quality FAIL: {', '.join(failed)}[/red]")
+        raise typer.Exit(code=1)
+
+
+def _result_line(r: BuildResult) -> str:
+    label = f"{r.symbol} {r.timeframe}"
+    if r.skipped_reason:
+        return f"[red]{label}: skipped ({escape(r.skipped_reason)})[/red]"
+    if r.rows_written == 0:
+        return f"{label}: up to date ({r.seconds:.1f}s)"
+    return (f"{label}: {r.rows_written:,} rows, {r.start:%Y-%m-%d %H:%M} .. "
+            f"{r.end:%Y-%m-%d %H:%M} UTC, {'full' if r.full else 'incremental'}, "
+            f"{r.seconds:.1f}s")
+
+
+def _build_symbols(conn, targets: list[str], timeframes: tuple[str, ...],
+                   rebuild: bool) -> bool:
+    """Build each symbol, print one line per (symbol, timeframe), and return
+    True if anything was skipped or failed.
+
+    `build_symbol` isolates the timeframes. This also isolates the symbols,
+    so an error in the quality gate itself is reported and the rest go on.
+    """
+    failed = False
+    for s in targets:
+        try:
+            results = build_symbol(conn, s, timeframes, rebuild=rebuild)
+        except Exception as exc:
+            # Same reasoning as `backfill`: an aborted transaction on this
+            # shared connection would fail the next symbol's first query.
+            try:
+                conn.rollback()
+            except Exception:
+                pass  # a broken connection must not mask the original error
+            logging.getLogger(__name__).error(
+                "%s: feature build failed: %s", s, exc)
+            console.print(f"[red]{s}: feature build failed: "
+                          f"{escape(str(exc))}[/red]", soft_wrap=True)
+            failed = True
+            continue
+        for r in results:
+            console.print(_result_line(r), soft_wrap=True)
+            failed = failed or r.skipped_reason is not None
+    return failed
+
+
+@features_app.command("build")
+def features_build(
+    symbol: str = typer.Option(None, help="One symbol; default is all configured"),
+    timeframe: str = typer.Option(
+        None, help="One of " + ", ".join(FEATURE_TIMEFRAMES) + "; default is all"),
+    rebuild: bool = typer.Option(
+        False, "--rebuild", help="Recompute everything from full history"),
+):
+    """Build market features from the stored candles. Safe to re-run."""
+    if timeframe is not None and timeframe not in FEATURE_TIMEFRAMES:
+        raise typer.BadParameter(
+            f"unknown timeframe {timeframe!r}; "
+            f"expected one of {', '.join(FEATURE_TIMEFRAMES)}")
+    _setup_logging()
+    targets = [symbol.upper()] if symbol else get_settings().symbols
+    timeframes = (timeframe,) if timeframe else FEATURE_TIMEFRAMES
+    with connect() as conn:
+        failed = _build_symbols(conn, targets, timeframes, rebuild)
+    if failed:
+        console.print("[red]some builds failed or were skipped[/red]")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def analyze(
+    symbol: str = typer.Argument(..., help="For example BTCUSDT"),
+    no_build: bool = typer.Option(
+        False, "--no-build", help="Show the stored features without building"),
+):
+    """Print the current market state of one symbol on every timeframe."""
+    _setup_logging()
+    symbol = symbol.upper()
+    with connect() as conn:
+        if last_candle_time(conn, symbol) is None:
+            console.print(f"[red]{escape(symbol)}: no 1m candles stored; "
+                          "run tb backfill first[/red]", soft_wrap=True)
+            raise typer.Exit(code=1)
+        failed = False
+        if not no_build:
+            failed = _build_symbols(conn, [symbol], FEATURE_TIMEFRAMES, False)
+        state = market_state(conn, symbol)
+    console.print(state.render(), markup=False, highlight=False, soft_wrap=True)
+    if failed:
+        console.print("[red]the build failed or was skipped; the state above "
+                      "may be out of date[/red]")
         raise typer.Exit(code=1)
 
 

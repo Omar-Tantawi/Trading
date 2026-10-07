@@ -4,13 +4,20 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from data.quality.report import Report
-from data.storage.repository import find_gaps
+from data.storage.repository import _floor, find_gaps
 
 log = logging.getLogger(__name__)
 
 STEP = {"1m": timedelta(minutes=1), "5m": timedelta(minutes=5),
         "15m": timedelta(minutes=15), "1h": timedelta(hours=1),
         "4h": timedelta(hours=4), "1d": timedelta(days=1)}
+
+# How long after a bucket closes the refresh policy may still be yet to
+# materialize it: the policy's schedule_interval + its end_offset (1 minute)
+# + 5 minutes of grace. A test pins these to timescaledb_information.jobs.
+POLICY_LAG = {"5m": timedelta(minutes=11), "15m": timedelta(minutes=21),
+              "1h": timedelta(minutes=66), "4h": timedelta(minutes=66),
+              "1d": timedelta(minutes=66)}
 
 PASS_COMPLETENESS = 99.9
 WARN_COMPLETENESS = 95.0
@@ -106,7 +113,8 @@ def _gap_detail(gap, explained: bool) -> dict:
 def run_quality_checks(conn, symbol: str, timeframe: str = "1m",
                        start: datetime | None = None,
                        end: datetime | None = None,
-                       known_outages: list[tuple] | None = None) -> Report:
+                       known_outages: list[tuple] | None = None,
+                       now: datetime | None = None) -> Report:
     step = STEP[timeframe]
     table = "candles_1m" if timeframe == "1m" else f"candles_{timeframe}"
     with conn.cursor() as cur:
@@ -125,8 +133,16 @@ def run_quality_checks(conn, symbol: str, timeframe: str = "1m",
                 {"step": step, "symbol": symbol},
             )
         first, last, total = cur.fetchone()
-        if total and last < first:
-            total = 0  # 1m data exists, but not one complete bucket of it
+        default_end = last
+        if timeframe != "1m" and total:
+            # The refresh policy materializes a closed bucket only some
+            # minutes later; until then it is not yet a hole. The newest
+            # bucket that must exist is the last one that closed at least
+            # POLICY_LAG ago.
+            now = now or datetime.now(timezone.utc)
+            default_end = min(last, _floor(now - POLICY_LAG[timeframe], step) - step)
+        if total and (last < first or (end is None and default_end < first)):
+            total = 0  # 1m data exists, but not one complete, due bucket of it
         if not total:
             report = Report(symbol=symbol, timeframe=timeframe,
                             checked_from=None, checked_to=None,
@@ -137,7 +153,7 @@ def run_quality_checks(conn, symbol: str, timeframe: str = "1m",
             return report
 
         start = start or first
-        end = end or last
+        end = end or default_end
         # Counts, invalid rows and non-unique timestamps in one SQL pass;
         # only three integers come back to Python, never the candles.
         cur.execute(

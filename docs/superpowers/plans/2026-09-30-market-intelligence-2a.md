@@ -472,7 +472,7 @@ def test_round_trip_preserves_values(db_conn, make_bars, assert_features_match):
     # compute_features on 300 1h bars → upsert → read_features matches the frame
 
 def test_nan_is_stored_as_null(db_conn, make_bars):
-    # after upsert, SELECT count(*) WHERE rsi_14 IS NULL equals the frame's NaN count (14… warm-up rows),
+    # after upsert, SELECT count(*) WHERE rsi_14 IS NULL equals the frame's NaN count (the 42 warm-up rows),
     # and SELECT count(*) WHERE rsi_14 = 'NaN'::float8 is 0
 
 def test_upsert_is_idempotent_and_updates(db_conn, make_bars):

@@ -300,10 +300,12 @@ history carry indicators computed across an outage.
   every row.
 - **Otherwise:** load from `last_built − LOOKBACK` to the cutoff, compute,
   and upsert only rows with `open_time > last_built`.
-  `LOOKBACK = max(2,100 bars, 400 days)` is chosen so that every recursive
-  feature's seed has decayed below 1e-9 relative (EMA 200 needs about 2,070
-  bars), the 365-day percentile window is complete, and swing and duration
-  counters see their history. On 1d this covers the whole history.
+  `LOOKBACK = max(400 days, 365 days + 2,100 bars)` is chosen so that every
+  recursive feature's seed has decayed below 1e-9 relative (EMA 200 needs
+  about 2,070 bars), the 365-day percentile window is complete and every
+  `atr_pct` inside it has 2,100 bars of history behind it, and swing and
+  duration counters see their history. The second term is never shorter than
+  2,100 bars. On 1d this covers the whole history.
 
 **Contract:** an incremental build yields the same values as a full build:
 exactly for integer and text columns, and for floats within
