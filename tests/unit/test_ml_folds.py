@@ -66,3 +66,10 @@ def test_final_split_purges():
     fit, cal = final_split(tau, 24, 0.2)
     assert tau[fit].max() + timedelta(hours=24) <= tau[cal].min()
     assert len(cal) == int(round(len(tau) * 0.2)) or abs(len(cal) - len(tau) * 0.2) < 2
+
+
+def test_walk_forward_labels_end_before_holdout():
+    tau = _tau()
+    for h in (1, 24):
+        for f in walk_forward_folds(tau, h, DEFAULT_FOLDS):
+            assert (tau[f.test_idx] + timedelta(hours=h) <= HOLDOUT).all()

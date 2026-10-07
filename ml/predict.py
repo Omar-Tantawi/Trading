@@ -19,6 +19,17 @@ from ml.dataset import SymbolData, encode, symbol_features
 from ml.labels import HORIZONS, threshold
 from ml.report import verdict
 
+class NoRecentFeatures(Exception):
+    pass
+
+
+def check_symbol(symbol: str, meta: dict) -> None:
+    """Refuse a symbol the model was not trained on."""
+    if symbol not in meta.get("symbols", []):
+        raise ArtifactMismatch(f"{symbol} was not among the training symbols "
+                               f"({', '.join(meta.get('symbols', []))})")
+
+
 # Enough history for the newest 1h row and the 4h and 1d rows it joins.
 _RECENT = timedelta(days=3)
 
@@ -78,6 +89,8 @@ def prediction_state(conn, symbol: str, root: Path = MODELS_DIR) -> PredictionSt
     """Raises FileNotFoundError when a model is missing and ArtifactMismatch
     when one no longer fits the code."""
     sd, closes = _recent(conn, symbol)
+    if sd.f1h.empty:
+        raise NoRecentFeatures(f"{symbol}: no 1h features from the last 3 days")
     open_time = sd.f1h.index[-1]
     close = float(closes.loc[open_time])
     atr_pct = sd.f1h["atr_pct"].iloc[-1]
@@ -86,6 +99,7 @@ def prediction_state(conn, symbol: str, root: Path = MODELS_DIR) -> PredictionSt
     for h in HORIZONS:
         for name in PREDICT_MODELS:
             model, meta = load_model(name, h, root)
+            check_symbol(symbol, meta)
             X = encode(features, symbol, tuple(meta["symbols"])).iloc[[-1]]
             run = store.load_run(conn, meta["run_id"]) if meta.get("run_id") else None
             s = run["metrics"]["models"].get(name) if run else None

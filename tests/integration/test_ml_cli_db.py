@@ -59,8 +59,10 @@ def test_evaluate_runs_report_and_holdout(db_conn, cli):
     listed = cli.invoke(app, ["ml", "runs"])
     assert listed.exit_code == 0 and "walk_forward" in listed.output
     with db_conn.cursor() as cur:
-        cur.execute("SELECT max(run_id) FROM ml_runs")
-        run_id = cur.fetchone()[0]
+        cur.execute("SELECT max(run_id), max(data_end) FROM ml_runs")
+        run_id, data_end = cur.fetchone()
+    # a walk-forward run never reaches into the holdout
+    assert data_end <= SMALL_FOLDS.holdout_start
     again = cli.invoke(app, ["ml", "report", str(run_id)])
     assert again.exit_code == 0 and f"Run {run_id}" in again.output
     assert cli.invoke(app, ["ml", "report", str(run_id + 99)]).exit_code == 1

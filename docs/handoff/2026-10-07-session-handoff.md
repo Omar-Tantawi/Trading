@@ -136,9 +136,17 @@ superpowers:executing-plans; ledger in the git-ignored `.superpowers/`).
 
 - New package `ml/`, migration `005_ml.sql`, commands `tb ml evaluate`,
   `tb ml runs`, `tb ml report`, `tb ml train`, `tb predict`.
-- Last count (cloud session, 2026-10-07): **347 tests pass** in the default
-  run (includes 115 `-m db` tests against a cloud TimescaleDB 2.30.1
+- Final whole-branch review (fresh reviewer): no leakage found, no Critical.
+  One fix pass fixed 7 findings (predict crash without recent features;
+  base rate smoothing and single-class logistic fallback; `python -m
+  data.cli` guard; holdout count as of the run; walk-forward `data_end`;
+  walk-forward labels end before the holdout; predict refuses a symbol the
+  models were not trained on).
+- Last count (cloud session, 2026-10-07): **354 tests pass** in the default
+  run (includes the `-m db` tests against a cloud TimescaleDB 2.30.1
   container); only the Binance network test was deselected.
+- Reviewer's runtime estimate for `tb ml evaluate` on real data: about
+  20–25 min (target < 30), unmeasured.
 - Leakage canaries (`tests/unit/test_ml_leakage.py`, ~90 s, marked `slow`):
   random walk shows no skill (logreg −9.4 %, xgb −3.9 %, both CIs below 0:
   overfitting small synthetic data, the safe direction); a leaked future
@@ -148,16 +156,14 @@ superpowers:executing-plans; ledger in the git-ignored `.superpowers/`).
 
 ## 6. Next steps
 
-1. Whole-branch review of `feat/prediction-ml-3` (executing-plans final
-   review), fixes if any.
-2. **User, on the PC** (spec §8.4): `git pull`, `pip install -e ".[dev]"`
+1. **User, on the PC** (spec §8.4): `git pull`, `pip install -e ".[dev]"`
    (adds scikit-learn, xgboost, joblib), `tb db upgrade`, `tb features
    build`, `tb ml evaluate`. Record the time (target < 30 min) and every
    model's skill and CI here, whatever they are.
-3. Only after reading that report together, and with the user's agreement:
+2. Only after reading that report together, and with the user's agreement:
    `tb ml evaluate --holdout` **once**.
-4. `tb ml train`, then `tb predict BTCUSDT`.
-5. Give the user the sub-project 3 rulings, then
+3. `tb ml train`, then `tb predict BTCUSDT`.
+4. Give the user the sub-project 3 rulings, then
    superpowers:finishing-a-development-branch. **Ask before merging.**
 
 ## 7. Open questions waiting on the user

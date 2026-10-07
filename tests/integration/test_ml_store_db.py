@@ -69,3 +69,9 @@ def test_delete_cascades(db_conn):
 def test_check_fresh_raises_when_empty(db_conn):
     with pytest.raises(StaleFeaturesError, match="BTCUSDT 1h: no features"):
         check_fresh(db_conn, ["BTCUSDT"])
+
+
+def test_holdout_count_is_as_of_the_run(db_conn):
+    first = _save(db_conn, "holdout")
+    _save(db_conn, "holdout")
+    assert store.load_run(db_conn, first)["holdout_count"] == 1

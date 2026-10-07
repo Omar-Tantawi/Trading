@@ -26,7 +26,7 @@ from ml.artifacts import PREDICT_MODELS, ArtifactMismatch, save_model
 from ml.evaluate import evaluate as ml_evaluate
 from ml.folds import DEFAULT_FOLDS, final_split, holdout_fold, walk_forward_folds
 from ml.models import make_models
-from ml.predict import prediction_state
+from ml.predict import NoRecentFeatures, prediction_state
 from ml.predict import render as render_prediction
 from ml.labels import HORIZONS
 from ml.load import StaleFeaturesError, check_fresh, load_symbol_data, run_config
@@ -346,9 +346,6 @@ def status():
     console.print(table)
 
 
-if __name__ == "__main__":
-    app()
-
 
 def _ml_data(conn, symbols: list[str]) -> dict:
     """Quality gate and freshness check, then every symbol's training data.
@@ -364,6 +361,12 @@ def _ml_data(conn, symbols: list[str]) -> dict:
                       soft_wrap=True)
         raise typer.Exit(code=1)
     return {s: load_symbol_data(conn, s) for s in symbols}
+
+
+def _data_end(tau, folds, horizon: int) -> datetime:
+    """The newest time whose price a run used: the last test label's end."""
+    last = max(tau[f.test_idx].max() for f in folds)
+    return (last + timedelta(hours=horizon)).to_pydatetime()
 
 
 def _horizons(values: list[int] | None) -> tuple[int, ...]:
@@ -403,7 +406,7 @@ def ml_evaluate_cmd(
             result = ml_evaluate(ds, h, folds)
             run_id = ml_store.save_run(
                 conn, kind="holdout" if holdout else "walk_forward", horizon=h,
-                symbols=symbols, data_end=ds.tau.max().to_pydatetime(),
+                symbols=symbols, data_end=_data_end(ds.tau, folds, h),
                 config=run_config(h, ML_FOLDS), metrics=result.metrics,
                 predictions=result.predictions)
             conn.commit()
@@ -484,6 +487,10 @@ def predict(
             failed = _build_symbols(conn, [symbol], FEATURE_TIMEFRAMES, False)
         try:
             state = prediction_state(conn, symbol)
+        except NoRecentFeatures as exc:
+            console.print(f"{exc}\nrun `tb features build` first", markup=False,
+                          soft_wrap=True)
+            raise typer.Exit(code=1)
         except FileNotFoundError:
             console.print("no saved models; run `tb ml train` first", markup=False)
             raise typer.Exit(code=1)
@@ -497,3 +504,7 @@ def predict(
         console.print("[red]the build failed or was skipped; the probabilities "
                       "above may be out of date[/red]")
         raise typer.Exit(code=1)
+
+
+if __name__ == "__main__":
+    app()

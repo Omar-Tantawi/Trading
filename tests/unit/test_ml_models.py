@@ -30,7 +30,8 @@ def test_temperature_recovers_known_T():
 def test_base_rate_is_class_share():
     X = pd.DataFrame({"a": [0.0] * 4})
     m = BaseRate().fit(X, np.array([0, 0, 1, 2]), X.iloc[:0], np.array([], int))
-    assert np.allclose(m.predict_proba(X[:2]), [[.5, .25, .25]] * 2)
+    # +1 smoothing, as the rule baselines: (2, 1, 1) + 1 -> (3, 2, 2)/7
+    assert np.allclose(m.predict_proba(X[:2]), [[3 / 7, 2 / 7, 2 / 7]] * 2)
 
 
 def test_rsi_zone_lookup():
@@ -81,3 +82,17 @@ def test_missing_class_still_three_columns(model):
 def test_model_order():
     assert [m.name for m in make_models()] == [
         "base_rate_v1", "ema_cross_v1", "rsi_v1", "macd_v1", "logreg_v1", "xgb_v1"]
+
+
+def test_base_rate_never_zero_for_absent_class():
+    X = pd.DataFrame({"a": [0.0] * 4})
+    m = BaseRate().fit(X, np.array([0, 0, 2, 2]), X.iloc[:0], np.array([], int))
+    assert (m.predict_proba(X[:1]) > 0).all()
+
+
+def test_logreg_single_class_falls_back_to_base_rate():
+    from ml.models import LogReg
+    X, _ = _random_xy()
+    y = np.zeros(len(X), dtype=int)
+    p = LogReg().fit(X[:400], y[:400], X[400:500], y[400:500]).predict_proba(X[500:])
+    assert p.shape == (100, 3) and np.allclose(p.sum(1), 1.0)

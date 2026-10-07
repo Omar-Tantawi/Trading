@@ -52,3 +52,10 @@ def test_train_then_predict_prints_every_horizon(db_conn, cli, tmp_path):
     assert "no walk-forward run recorded" in result.output
     assert "95% CI" in result.output
     assert not ADVICE.search(result.output)
+
+
+def test_predict_without_recent_features_exits_1(db_conn, cli):
+    _insert(db_conn, "BTCUSDT", range(0, 2 * DAY_MINUTES))
+    result = cli.invoke(app, ["predict", "BTCUSDT", "--no-build"])
+    assert result.exit_code == 1, result.output
+    assert "run `tb features build` first" in result.output

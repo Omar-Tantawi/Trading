@@ -87,10 +87,18 @@ class LogReg(Model):
         self.fill = median.where(median.notna(), 0.0)
         Z = X.fillna(self.fill).to_numpy(dtype=float)
         self.scaler = StandardScaler().fit(Z)
+        self.single = None
+        if len(np.unique(y)) < 2:
+            # Nothing to separate: fall back to the smoothed class shares.
+            counts = np.bincount(y, minlength=N_CLASSES) + 1.0
+            self.single = counts / counts.sum()
+            return
         self.model = LogisticRegression(**LOGREG_PARAMS).fit(
             self.scaler.transform(Z), y)
 
     def _raw_proba(self, X):
+        if self.single is not None:
+            return np.tile(self.single, (len(X), 1))
         Z = X[self.columns].fillna(self.fill).to_numpy(dtype=float)
         p = np.zeros((len(X), N_CLASSES))
         p[:, self.model.classes_] = self.model.predict_proba(self.scaler.transform(Z))

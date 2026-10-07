@@ -21,8 +21,10 @@ class BaseRate(Model):
     calibrate = False
 
     def _fit(self, X, y):
-        counts = np.bincount(y, minlength=N_CLASSES).astype(float)
-        self.p = counts / counts.sum()
+        # +1 smoothing, as the rule baselines: a class absent from the
+        # training rows never gets probability 0 (which would inflate every
+        # other model's skill).
+        self.p = _shares(y)
 
     def _raw_proba(self, X):
         return np.tile(self.p, (len(X), 1))

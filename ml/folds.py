@@ -62,11 +62,15 @@ def final_split(tau: pd.DatetimeIndex, horizon: int,
 
 def _fold(number, tau, horizon, cfg, start, end) -> Fold | None:
     start_ts = pd.Timestamp(start)
+    gap = pd.Timedelta(hours=horizon)
     in_test = tau >= start_ts
     if end is not None:
         in_test &= tau < pd.Timestamp(end)
+        # A walk-forward label must be known before the holdout starts, so
+        # no price from the holdout period is ever used in development.
+        in_test &= tau + gap <= pd.Timestamp(cfg.holdout_start)
     test = np.flatnonzero(in_test)
-    candidates = np.flatnonzero(tau + pd.Timedelta(hours=horizon) <= start_ts)
+    candidates = np.flatnonzero(tau + gap <= start_ts)
     fit, cal = _split_train(tau, candidates, horizon, cfg.cal_fraction)
     if len(test) == 0 or len(fit) == 0:
         return None

@@ -39,10 +39,16 @@ def save_run(conn, *, kind: str, horizon: int, symbols: list[str],
     return run_id
 
 
-def holdout_count(conn, horizon: int) -> int:
+def holdout_count(conn, horizon: int, up_to_run: int | None = None) -> int:
+    """Holdout runs for the horizon; with up_to_run, only those up to and
+    including that run (what was known when it ran)."""
+    sql = "SELECT count(*) FROM ml_runs WHERE kind = 'holdout' AND horizon = %s"
+    params = [horizon]
+    if up_to_run is not None:
+        sql += " AND run_id <= %s"
+        params.append(up_to_run)
     with conn.cursor() as cur:
-        cur.execute("SELECT count(*) FROM ml_runs "
-                    "WHERE kind = 'holdout' AND horizon = %s", (horizon,))
+        cur.execute(sql, params)
         return cur.fetchone()[0]
 
 
@@ -66,7 +72,8 @@ def list_runs(conn) -> list[dict]:
 
 
 def load_run(conn, run_id: int) -> dict | None:
-    """Every ml_runs column, plus holdout_count for the run's horizon."""
+    """Every ml_runs column, plus holdout_count: the holdout runs for the
+    run's horizon up to and including this one."""
     with conn.cursor() as cur:
         cur.execute("SELECT run_id, created_at, kind, horizon, label_set, "
                     "feature_set, symbols, data_end, config, metrics "
@@ -76,5 +83,5 @@ def load_run(conn, run_id: int) -> dict | None:
             return None
         names = [d.name for d in cur.description]
     run = dict(zip(names, row))
-    run["holdout_count"] = holdout_count(conn, run["horizon"])
+    run["holdout_count"] = holdout_count(conn, run["horizon"], run["run_id"])
     return run

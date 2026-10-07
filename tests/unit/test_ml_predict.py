@@ -58,3 +58,17 @@ def test_predict_rows_refuses_column_mismatch():
         predict_rows(model, X[["a", "b"]].iloc[:1], meta)
     with pytest.raises(ArtifactMismatch):
         predict_rows(model, X.assign(d=1.0).iloc[:1], meta)
+
+
+def test_check_symbol_refuses_untrained_symbol():
+    from ml.predict import check_symbol
+    check_symbol("BTCUSDT", {"symbols": ["BTCUSDT"]})
+    with pytest.raises(ArtifactMismatch, match="DOGEUSDT"):
+        check_symbol("DOGEUSDT", {"symbols": ["BTCUSDT"]})
+
+
+def test_python_m_data_cli_lists_ml_commands():
+    import subprocess, sys
+    out = subprocess.run([sys.executable, "-m", "data.cli", "predict", "--help"],
+                         capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
