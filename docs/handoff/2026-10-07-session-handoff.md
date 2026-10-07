@@ -2,8 +2,7 @@
 
 **Written:** 2026-10-07. Replaces the 2026-09-29 handoff, which described
 sub-project 1 (now merged into `master`).
-**Branch:** `feat/market-intelligence-2a` (sub-project 2a, not yet merged).
-**Base:** `master` at `17ee56c`.
+**Branch:** `master`. Sub-project 2a was merged on 2026-10-07 (`771af81`).
 
 > Trust `git log` and the spec over this document if they ever disagree.
 
@@ -27,7 +26,7 @@ and vision-model parts are out of scope).
 ## 2. Build order (decided; do not re-open)
 
 1. Data foundation: **done, merged.**
-2. Market intelligence. **2a (features) is built and verified on this branch**;
+2. Market intelligence. **2a (features) is done and merged**;
    2b (Market Profile, from `docs/research/2026-09-23-market-profile-hypotheses.md`) comes later.
 3. Prediction ML (baselines, XGBoost, walk-forward, calibration).
    3.5. Minimal read-only dashboard.
@@ -81,9 +80,9 @@ pass, 105 `-m db` tests pass.
 2. Feature rows = eligible aggregate buckets for all 20 pairs, first and last
    bar equal, `feature_set = 1` everywhere.
 3. `tb analyze BTCUSDT` reads sensibly in **17 s** (target < 30 s).
-4. **Still open:** the user's own check: compare Binance's BTCUSDT 1h chart
-   (RSI 14, EMA 200) with `tb analyze` on the last closed bar. Needs fresh
-   data first (`tb backfill` catches up the tail), so it must run on the PC.
+4. The user's own check, done 2026-10-07: Binance's BTCUSDT 1h RSI(14) and
+   EMA(200) match `tb analyze` (bar 2026-10-07 07:00 UTC: RSI 32.28,
+   EMA 200 84,928.30). Data was caught up to 2026-10-07 08:27 UTC.
 
 ### Rulings made during 2a (each with its cost if wrong)
 
@@ -116,15 +115,11 @@ test, a "failed mid-build leaves no partial writes" test); unescaped Rich
 markup for a user-supplied `--symbol`; the 300k-bar performance test sits in
 the default unit suite (~1.2 s).
 
-## 6. Next steps, in order
+## 6. Next steps
 
-1. **User:** the Binance RSI/EMA comparison (§5, item 4), on the PC.
-2. Give the user the rulings above, then use
-   **superpowers:finishing-a-development-branch** to merge
-   `feat/market-intelligence-2a` into `master`. **Ask the user first**; never
-   merge or push without asking.
-3. Start the next piece (2b Market Profile, or sub-project 3) with
-   **superpowers:brainstorming**.
+2a is verified, the rulings were given to the user, and it is merged into
+`master`. Next: start the next piece (2b Market Profile, or sub-project 3
+prediction ML; ask the user which) with **superpowers:brainstorming**.
 
 ## 7. Open questions waiting on the user
 
