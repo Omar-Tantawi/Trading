@@ -85,3 +85,15 @@ def load_run(conn, run_id: int) -> dict | None:
     run = dict(zip(names, row))
     run["holdout_count"] = holdout_count(conn, run["horizon"], run["run_id"])
     return run
+
+
+def load_predictions(conn, run_id: int) -> pd.DataFrame:
+    """Every stored prediction of a run, in the columns evaluate() returns."""
+    cols = ", ".join(_PRED_COLUMNS)
+    with conn.cursor() as cur:
+        cur.execute(f"SELECT {cols} FROM ml_predictions WHERE run_id = %s",
+                    (run_id,))
+        rows = cur.fetchall()
+    out = pd.DataFrame(rows, columns=list(_PRED_COLUMNS))
+    out["open_time"] = pd.to_datetime(out["open_time"], utc=True)
+    return out

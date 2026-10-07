@@ -24,6 +24,7 @@ from features.summary import market_state
 from ml import store as ml_store
 from ml.dataset import build_dataset
 from ml.artifacts import PREDICT_MODELS, ArtifactMismatch, save_model
+from ml.diagnose import render_diagnosis, split_skill
 from ml.evaluate import evaluate as ml_evaluate
 from ml.folds import DEFAULT_FOLDS, final_split, holdout_fold, walk_forward_folds
 from ml.models import make_models
@@ -517,6 +518,19 @@ def predict(
         console.print("[red]the build failed or was skipped; the probabilities "
                       "above may be out of date[/red]")
         raise typer.Exit(code=1)
+
+
+@ml_app.command("diagnose")
+def ml_diagnose_cmd(run_id: int = typer.Argument(..., help="From tb ml runs")):
+    """Split a run's skill into size (move vs flat) and direction (up vs down)."""
+    with connect() as conn:
+        run = ml_store.load_run(conn, run_id)
+        if run is None:
+            console.print(f"[red]no run {run_id}[/red]")
+            raise typer.Exit(code=1)
+        pred = ml_store.load_predictions(conn, run_id)
+    console.print(render_diagnosis(run_id, run["horizon"], split_skill(pred)),
+                  markup=False, highlight=False, soft_wrap=True)
 
 
 if __name__ == "__main__":

@@ -180,6 +180,7 @@ advice**: nothing here says to buy or sell, and "flat" is a normal outcome.
 .venv\Scripts\tb.exe ml evaluate --horizon 4
 .venv\Scripts\tb.exe ml runs
 .venv\Scripts\tb.exe ml report 12
+.venv\Scripts\tb.exe ml diagnose 12
 .venv\Scripts\tb.exe ml train
 .venv\Scripts\tb.exe predict BTCUSDT
 ```
@@ -194,6 +195,10 @@ advice**: nothing here says to buy or sell, and "flat" is a normal outcome.
   happened in the training data (the base rate). +1.0% means 1% lower log
   loss. The 95% interval shows how sure that is; if it includes 0, the model
   has not shown it knows anything the base rate does not.
+- **`tb ml diagnose RUN_ID`** splits a run's skill in two: *size* (does
+  the model know whether the price will move at all?) and *direction* (when
+  it did move, does the model know which way?). It reads the stored
+  predictions; nothing is retrained.
 - **The holdout.** Data from 2025-10-01 on is kept out of every normal
   evaluation, so there is one final, honest test. `tb ml evaluate
   --holdout` uses it, and every use is counted: from the second time on, the

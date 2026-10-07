@@ -69,6 +69,10 @@ def test_evaluate_runs_report_and_holdout(db_conn, cli):
     again = cli.invoke(app, ["ml", "report", str(run_id)])
     assert again.exit_code == 0 and f"Run {run_id}" in again.output
     assert cli.invoke(app, ["ml", "report", str(run_id + 99)]).exit_code == 1
+    diag = cli.invoke(app, ["ml", "diagnose", str(run_id)])
+    assert diag.exit_code == 0, diag.output
+    assert "xgb_v1" in diag.output and "direction (up vs down" in diag.output
+    assert cli.invoke(app, ["ml", "diagnose", str(run_id + 99)]).exit_code == 1
 
     for n in (1, 2):
         held = cli.invoke(app, ["ml", "evaluate", "--horizon", "4", "--holdout"])

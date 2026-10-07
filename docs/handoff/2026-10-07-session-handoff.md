@@ -180,6 +180,11 @@ superpowers:executing-plans; ledger in the git-ignored `.superpowers/`).
 ## 6. Next steps
 
 1. Done: the first `tb ml evaluate` on real data (results above).
+   The user chose option A: before any holdout run, find out whether the
+   skill is about size (move vs flat) or direction. Added `tb ml diagnose
+   RUN_ID` (`ml/diagnose.py`), which reads stored predictions only.
+   **User:** `git pull`, then `tb ml diagnose 1` and `tb ml diagnose 2`
+   (runs 1 and 2 = 1h and 4h), and the re-timed `tb ml evaluate`.
 2. Only after reading that report together, and with the user's agreement:
    `tb ml evaluate --holdout` **once**.
 3. `tb ml train`, then `tb predict BTCUSDT`.
