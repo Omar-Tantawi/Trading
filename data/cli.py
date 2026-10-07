@@ -12,12 +12,21 @@ from data.collectors.backfill import ArchiveDownloader, backfill_symbol
 from data.collectors.binance_rest import BinanceRest, RateLimitedError, parse_symbol_info
 from data.collectors.live import LiveCollector
 from data.config import get_settings
-from data.quality.checks import STEP, run_quality_checks
+from data.quality.checks import (
+    STEP, DataQualityError, assert_trainable, run_quality_checks,
+)
 from data.storage.db import connect, run_migrations
 from data.storage.repository import last_candle_time, refresh_aggregates, upsert_symbol
 from features.build import BuildResult, build_symbol
 from features.pipeline import FEATURE_TIMEFRAMES
 from features.summary import market_state
+from ml import store as ml_store
+from ml.dataset import build_dataset
+from ml.evaluate import evaluate as ml_evaluate
+from ml.folds import DEFAULT_FOLDS, holdout_fold, walk_forward_folds
+from ml.labels import HORIZONS
+from ml.load import StaleFeaturesError, check_fresh, load_symbol_data, run_config
+from ml.report import render_report
 
 app = typer.Typer(help="AI Trading Buddy data foundation")
 db_app = typer.Typer(help="Database maintenance")
@@ -26,7 +35,12 @@ features_app = typer.Typer(help="Market feature engine")
 app.add_typer(db_app, name="db")
 app.add_typer(symbols_app, name="symbols")
 app.add_typer(features_app, name="features")
+ml_app = typer.Typer(help="Prediction models (measurements, not advice)")
+app.add_typer(ml_app, name="ml")
 console = Console()
+
+# Walk-forward fold settings; a module attribute so tests can shrink them.
+ML_FOLDS = DEFAULT_FOLDS
 
 # A 1m feed more than this far behind is stale, not merely quiet.
 STALE_AFTER_MINUTES = 5
@@ -330,3 +344,91 @@ def status():
 
 if __name__ == "__main__":
     app()
+
+
+def _ml_data(conn, symbols: list[str]) -> dict:
+    """Quality gate and freshness check, then every symbol's training data.
+    Prints the reason and exits 1 when training must not proceed."""
+    try:
+        assert_trainable(conn, symbols, "1m")
+        check_fresh(conn, symbols)
+    except DataQualityError as exc:
+        console.print(escape(str(exc)), soft_wrap=True)
+        raise typer.Exit(code=1)
+    except StaleFeaturesError as exc:
+        console.print(f"{escape(str(exc))}\nrun `tb features build` first",
+                      soft_wrap=True)
+        raise typer.Exit(code=1)
+    return {s: load_symbol_data(conn, s) for s in symbols}
+
+
+def _horizons(values: list[int] | None) -> tuple[int, ...]:
+    if not values:
+        return HORIZONS
+    bad = [h for h in values if h not in HORIZONS]
+    if bad:
+        raise typer.BadParameter(
+            f"unknown horizon {bad[0]}; expected one of "
+            + ", ".join(map(str, HORIZONS)))
+    return tuple(values)
+
+
+@ml_app.command("evaluate")
+def ml_evaluate_cmd(
+    horizon: list[int] = typer.Option(
+        None, "--horizon", help="Hours ahead (1, 4 or 24); repeatable; default all"),
+    holdout: bool = typer.Option(
+        False, "--holdout", help="Test on the final holdout period (counted)"),
+):
+    """Walk-forward test of every model; stores the run and prints a report."""
+    horizons = _horizons(horizon)
+    _setup_logging()
+    symbols = get_settings().symbols
+    with connect() as conn:
+        data = _ml_data(conn, symbols)
+        for h in horizons:
+            ds = build_dataset(data, h, tuple(symbols))
+            if holdout:
+                fold = holdout_fold(ds.tau, h, ML_FOLDS)
+                folds = [fold] if fold else []
+            else:
+                folds = walk_forward_folds(ds.tau, h, ML_FOLDS)
+            if not folds:
+                console.print(f"next {h}h: no test rows; nothing evaluated")
+                continue
+            result = ml_evaluate(ds, h, folds)
+            run_id = ml_store.save_run(
+                conn, kind="holdout" if holdout else "walk_forward", horizon=h,
+                symbols=symbols, data_end=ds.tau.max().to_pydatetime(),
+                config=run_config(h, ML_FOLDS), metrics=result.metrics,
+                predictions=result.predictions)
+            conn.commit()
+            console.print(render_report(ml_store.load_run(conn, run_id)),
+                          markup=False, highlight=False, soft_wrap=True)
+            console.print()
+
+
+@ml_app.command("runs")
+def ml_runs_cmd():
+    """List stored evaluation runs."""
+    with connect() as conn:
+        runs = ml_store.list_runs(conn)
+    table = Table("run", "kind", "horizon", "created (UTC)", "predictions",
+                  "xgb skill")
+    for r in runs:
+        skill = "-" if r["xgb_skill"] is None else f"{r['xgb_skill']:+.1%}"
+        table.add_row(str(r["run_id"]), r["kind"], f"{r['horizon']}h",
+                      f"{r['created_at']:%Y-%m-%d %H:%M}",
+                      f"{r['n_predictions']:,}", skill)
+    console.print(table)
+
+
+@ml_app.command("report")
+def ml_report_cmd(run_id: int = typer.Argument(..., help="From tb ml runs")):
+    """Print a stored run's report again."""
+    with connect() as conn:
+        run = ml_store.load_run(conn, run_id)
+    if run is None:
+        console.print(f"[red]no run {run_id}[/red]")
+        raise typer.Exit(code=1)
+    console.print(render_report(run), markup=False, highlight=False, soft_wrap=True)
