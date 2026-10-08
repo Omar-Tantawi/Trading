@@ -11,6 +11,9 @@ dependencies = [
     "rich>=13.7",
     "pandas>=3.0",
     "numpy>=2.0",
+    "scikit-learn>=1.6",
+    "xgboost>=3.0",
+    "joblib>=1.4",
 ]
 
 [project.optional-dependencies]
@@ -28,12 +31,13 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["data*", "features*"]
+include = ["data*", "features*", "ml*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 markers = [
     "network: hits the real Binance API (deselected by default)",
     "db: needs the TimescaleDB container",
+    "slow: long-running ML tests",
 ]
 addopts = "-m 'not network'"

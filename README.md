@@ -1,7 +1,8 @@
-# AI Trading Buddy — Data Foundation and Market Features
+# AI Trading Buddy — Data, Market Features and Prediction Models
 
-Verified Binance market-data warehouse (sub-project 1) and the market
-features computed from it (sub-project 2a); see `docs/superpowers/specs/`
+Verified Binance market-data warehouse (sub-project 1), the market
+features computed from it (sub-project 2a) and prediction models measured
+on them (sub-project 3); see `docs/superpowers/specs/`
 for the designs and `docs/superpowers/plans/` for the implementation plans.
 
 ## First-time setup
@@ -164,6 +165,51 @@ plain language.
   uses that bar's close, so it is only known at `t + step`. Anything that
   joins features to later outcomes (sub-project 3's labels) must line up
   with `t + step`, not `t`, or it will use the future.
+
+## Prediction models (sub-project 3)
+
+Models that estimate, for each coin, the probability that the price ends
+**up**, **down** or **flat** after 1, 4 or 24 hours. "Up" means the close
+rises by more than half the coin's normal hourly range (ATR) scaled to the
+horizon; "flat" is anything in between. These are **measurements, not
+advice**: nothing here says to buy or sell, and "flat" is a normal outcome.
+
+```bash
+.venv\Scripts\tb.exe features build
+.venv\Scripts\tb.exe ml evaluate
+.venv\Scripts\tb.exe ml evaluate --horizon 4
+.venv\Scripts\tb.exe ml runs
+.venv\Scripts\tb.exe ml report 12
+.venv\Scripts\tb.exe ml diagnose 12
+.venv\Scripts\tb.exe ml train
+.venv\Scripts\tb.exe predict BTCUSDT
+```
+
+- **`tb ml evaluate`** tests every model walk-forward: train on the past,
+  predict the next six months it has never seen, move forward, repeat
+  (from 2020). It prints a report and stores every prediction in the
+  database (`ml_runs`, `ml_predictions`). It needs current features: if
+  they are old it says "run `tb features build` first" and exits 1. A
+  1m quality FAIL also stops it.
+- **Skill** compares a model with simply predicting how often each outcome
+  happened in the training data (the base rate). +1.0% means 1% lower log
+  loss. The 95% interval shows how sure that is; if it includes 0, the model
+  has not shown it knows anything the base rate does not.
+- **`tb ml diagnose RUN_ID`** splits a run's skill in two: *size* (does
+  the model know whether the price will move at all?) and *direction* (when
+  it did move, does the model know which way?). It reads the stored
+  predictions; nothing is retrained.
+- **The holdout.** Data from 2025-10-01 on is kept out of every normal
+  evaluation, so there is one final, honest test. `tb ml evaluate
+  --holdout` uses it, and every use is counted: from the second time on, the
+  report warns that the result is no longer unbiased. Use it once, at the
+  end, deliberately.
+- **`tb ml train`** fits the logistic regression and XGBoost on all history
+  and saves them in `models\` (not committed to git). **`tb predict
+  SYMBOL`** builds the newest features, then prints each model's
+  probabilities with the skill it showed on unseen data next to them.
+- Stored runs are never deleted automatically. To remove one (and its
+  predictions): `DELETE FROM ml_runs WHERE run_id = 12;`.
 
 ## Facts worth knowing
 
