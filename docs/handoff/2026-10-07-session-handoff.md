@@ -183,8 +183,20 @@ superpowers:executing-plans; ledger in the git-ignored `.superpowers/`).
    The user chose option A: before any holdout run, find out whether the
    skill is about size (move vs flat) or direction. Added `tb ml diagnose
    RUN_ID` (`ml/diagnose.py`), which reads stored predictions only.
-   **User:** `git pull`, then `tb ml diagnose 1` and `tb ml diagnose 2`
-   (runs 1 and 2 = 1h and 4h), and the re-timed `tb ml evaluate`.
+   **Result (2026-10-08, runs 1 and 2): the skill is almost all size.**
+
+   | | 1h size | 1h direction | 4h size | 4h direction |
+   |---|---|---|---|---|
+   | xgb_v1 | +1.7 % (+1.5 … +1.9) | +0.2 % (+0.0 … +0.4) | +1.2 % (+1.0 … +1.4) | −0.1 % (−0.6 … +0.3) |
+   | logreg_v1 | +1.1 % (+1.0 … +1.3) | −0.5 % (−0.8 … −0.2) | −0.0 % | −1.5 % (−2.2 … −0.9) |
+   | rule baselines | +0.1 … +0.3 % | ~0 % | +0.1 … +0.2 % | ~0 % |
+
+   The models know when the market will be busy or quiet (volatility), not
+   which way it will go. xgb picks the right side in 52.8 % of moves at
+   both 1h and 4h (base rate's side: 50.8 % / 49.8 %), but its direction
+   probabilities do not beat the base rate in log loss (1h only borderline),
+   so that hit rate is not an established signal.
+   Still pending: the re-timed `tb ml evaluate` (with `logreg_v2`).
 2. Only after reading that report together, and with the user's agreement:
    `tb ml evaluate --holdout` **once**.
 3. `tb ml train`, then `tb predict BTCUSDT`.
