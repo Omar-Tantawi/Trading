@@ -31,7 +31,8 @@ and vision-model parts are out of scope).
    2b (Market Profile, from `docs/research/2026-09-23-market-profile-hypotheses.md`) comes later.
 3. Prediction ML (baselines, XGBoost, walk-forward, calibration). **Done and
    merged** (v1: mostly a volatility forecaster; see §5b).
-   3.5. Minimal read-only dashboard.
+   3.5. Minimal read-only dashboard. **Built on `feat/dashboard-3-5`
+   (2026-10-08); PC check and merge pending (§5c).**
 4. Backtesting. 5. Signals, risk and portfolio. 6. Bot monitoring.
 7. Bot advisor. 8. LLM assistant (the user picks the LLM then).
 9. Full dashboard. 10. Demo, then shadow, then controlled real trading.
@@ -177,6 +178,18 @@ superpowers:executing-plans; ledger in the git-ignored `.superpowers/`).
 - Fixed after the run: the report printed models in jsonb key order; now a
   fixed order (`ml/report.py`).
 
+## 5c. Current state of sub-project 3.5 (dashboard)
+
+Agreed with the user: approach A (FastAPI + one plain HTML page, TradingView
+Lightweight Charts v5.2.1 vendored under `dashboard/static/vendor/`).
+Spec `docs/superpowers/specs/2026-10-08-dashboard-3-5-design.md`, plan
+`docs/superpowers/plans/2026-10-08-dashboard-3-5.md`. `tb dashboard` serves
+http://127.0.0.1:8050 with Chart, Models and Data health tabs. Tested in the
+cloud session against the test database, including a Chromium smoke test
+(`tests/integration/test_dashboard_browser_db.py`, needs the `playwright`
+package, which is not a project dependency; skipped without it). Not yet
+opened on the PC with real data.
+
 ## 6. Next steps
 
 1. Done: the first `tb ml evaluate` on real data (results above).
@@ -214,10 +227,11 @@ superpowers:executing-plans; ledger in the git-ignored `.superpowers/`).
 4. Done 2026-10-08: rulings given to the user; merged into `master` with
    the user's approval (merged result: 242 unit + 117 db + 4 leakage
    canaries pass).
-5. **Next:** ask the user which piece comes next (superpowers:brainstorming):
-   3.5 minimal dashboard (next in the build order), 2b Market Profile, or a
-   "3b" with a cleaner target (separate volatility and direction questions).
-   The holdout (from 2025-10-01) is still unused; keep it so.
+5. The user chose 3.5 (dashboard): built, see §5c. **User:** `git pull` on
+   `feat/dashboard-3-5`, `pip install -e ".[dev]"`, `tb dashboard`, check
+   the three tabs; then merge (ask first). After that: 2b Market Profile or
+   "3b" (separate volatility and direction targets). The holdout (from
+   2025-10-01) is still unused; keep it so.
 
 ## 7. Open questions waiting on the user
 

@@ -5,7 +5,7 @@ Pure: no database. Every embedded text is escaped.
 from html import escape
 
 W, H = 480, 320
-L, R, T, B = 50, 16, 34, 40          # margins: left, right, top, bottom
+L, R, T, B = 50, 16, 44, 40          # margins: left, right, top, bottom
 PW, PH = W - L - R, H - T - B        # plot width and height
 
 
@@ -82,6 +82,6 @@ def skill_svg(per_fold: list[dict], skill: float, lo: float | None,
                     f'transform="rotate(-45 {bx + step * 0.35:.1f} {H - B + 14})">'
                     f'{escape(f["test_start"][:7])}</text>')
     ci = "" if lo is None or hi is None else f" (95% CI {lo:+.1%} to {hi:+.1%})"
-    body.append(f'<text x="{L + 8}" y="{T + 12}" fill="#222">'
-                f'pooled skill {skill:+.1%}{ci}</text>')
+    body.append(f'<text x="{W / 2}" y="{T - 4}" text-anchor="middle" '
+                f'fill="#444">pooled skill {skill:+.1%}{ci}</text>')
     return _svg(body, title)

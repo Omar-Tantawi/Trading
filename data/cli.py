@@ -533,5 +533,19 @@ def ml_diagnose_cmd(run_id: int = typer.Argument(..., help="From tb ml runs")):
                   markup=False, highlight=False, soft_wrap=True)
 
 
+@app.command()
+def dashboard(port: int = typer.Option(8050, help="Local port")):
+    """Open a read-only dashboard in your browser (on this PC only)."""
+    import uvicorn
+
+    from dashboard.app import create_app
+
+    _setup_logging()
+    console.print(f"Dashboard: http://127.0.0.1:{port}  (Ctrl+C to stop)",
+                  markup=False)
+    uvicorn.run(create_app(connect), host="127.0.0.1", port=port,
+                log_level="warning")
+
+
 if __name__ == "__main__":
     app()
