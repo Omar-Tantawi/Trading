@@ -66,3 +66,8 @@ def test_dir2():
     assert out.isna().iloc[2]          # r = 0
     assert out.isna().iloc[3]          # NULL atr
     assert out.isna().iloc[4]          # no future bar
+
+
+def test_move3_label_set_follows_labels_module():
+    from ml.labels import LABEL_SET
+    assert get_target("move3").label_set == LABEL_SET

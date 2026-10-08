@@ -78,7 +78,7 @@ def test_evaluate_runs_report_and_holdout(db_conn, cli):
     for n in (1, 2):
         held = cli.invoke(app, ["ml", "evaluate", "--horizon", "4", "--holdout"])
         assert held.exit_code == 0, held.output
-        assert f"Holdout evaluations for this horizon so far: {n}" in held.output
+        assert f"Holdout evaluations for this horizon so far (all targets): {n}" in held.output
     assert "no longer an unbiased estimate" in held.output
 
 

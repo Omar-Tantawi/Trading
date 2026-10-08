@@ -21,7 +21,7 @@ def _hp(h, model, note=None, skill=(0.008, 0.003, 0.013), target="move3"):
                                "dir2": [0.49, 0.51]}[target]
     meaning = None if note else {
         "move3": "up = close above 84,600; down = below 83,300",
-        "vol3": "quiet = stays within 0.42% of 84,000; wild = moves 1.05% or more",
+        "vol3": "quiet = stays between 83,650 and 84,350; wild = reaches 83,120 or 84,890",
         "dir2": None}[target]
     return HorizonPrediction(
         horizon=h, model=model, target=target, classes=classes, probs=probs,
@@ -106,7 +106,13 @@ def test_render_vol3_dir2_and_skip_lines():
     state.skipped = ["next 24h, direction: no saved models; run `tb ml train --target dir2`"]
     text = render(state)
     assert ("next 4h (to 13:00 UTC), xgb_v1, volatility: quiet 31% | normal 51% | wild 18%"
-            "  (quiet = stays within 0.42% of 84,000; wild = moves 1.05% or more)") in text
+            "  (quiet = stays between 83,650 and 84,350; wild = reaches 83,120 or 84,890)") in text
     assert "next 4h (to 13:00 UTC), xgb_v1, direction: down 49% | up 51%\n" in text
     assert "run `tb ml train --target dir2`" in text
     assert not ADVICE.search(text)
+
+
+def test_vol3_meaning_uses_exact_prices():
+    from ml.predict import _meaning
+    m = _meaning("vol3", 84_000.0, 0.01, 4)          # unit 0.02
+    assert m == "quiet = stays between 83,164 and 84,844; wild = reaches 81,926 or 86,126"

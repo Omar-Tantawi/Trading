@@ -78,3 +78,21 @@ def test_train_vol3_then_predict_shows_it_and_skips_dir2(db_conn, cli, tmp_path)
     assert "direction: no saved models; run `tb ml train --target dir2`" in out.output
     assert "xgb_v1, move: down" in out.output
     assert not ADVICE.search(out.output)
+
+
+def test_stale_vol3_model_does_not_block_move3(db_conn, cli, tmp_path):
+    import json
+    _insert(db_conn, "BTCUSDT", range(0, DAYS * DAY_MINUTES))
+    assert cli.invoke(app, ["features", "build"]).exit_code == 0
+    for target in ("move3", "vol3"):
+        assert cli.invoke(app, ["ml", "train", "--target", target]).exit_code == 0
+    for h in (1, 4, 24):
+        meta = tmp_path / "models" / f"vol3_xgb_v1_h{h}" / "meta.json"
+        m = json.loads(meta.read_text()); m["feature_set"] = 999
+        meta.write_text(json.dumps(m))
+    out = cli.invoke(app, ["predict", "BTCUSDT", "--no-build"])
+    assert out.exit_code == 0, out.output
+    assert "xgb_v1, move: down" in out.output and "logreg_v2, volatility: quiet" in out.output
+    assert out.output.count("volatility (xgb_v1):") == 1
+    assert "run `tb ml train --target vol3`" in out.output
+    assert out.output.count("direction: no saved models") == 1

@@ -39,7 +39,9 @@ def render_report(run: dict) -> str:
     ]
     if run["kind"] == "holdout":
         n = run["holdout_count"]
-        lines.append(f"Holdout evaluations for this horizon so far: {n}")
+        # Counted across targets: once any target has looked at the holdout
+        # period, it is no longer unseen.
+        lines.append(f"Holdout evaluations for this horizon so far (all targets): {n}")
         if n >= 2:
             lines.append(f"Warning: the holdout has now been evaluated {n} times; "
                          "this result is no longer an unbiased estimate.")

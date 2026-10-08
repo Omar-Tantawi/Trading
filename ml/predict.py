@@ -107,9 +107,29 @@ def _meaning(target: str, close: float, atr_pct: float, horizon: int) -> str | N
                 f"down = below {close * math.exp(-thr):,.0f}")
     if target == "vol3":
         unit = atr_pct * math.sqrt(horizon)
-        return (f"quiet = stays within {math.exp(VOL_QUIET * unit) - 1:.2%} of "
-                f"{close:,.0f}; wild = moves {math.exp(VOL_WILD * unit) - 1:.2%} or more")
+        quiet = math.exp(VOL_QUIET * unit)
+        wild = math.exp(VOL_WILD * unit)
+        return (f"quiet = stays between {close / quiet:,.0f} and {close * quiet:,.0f}; "
+                f"wild = reaches {close / wild:,.0f} or {close * wild:,.0f}")
     return None
+
+
+def _skip_lines(problems: dict, shown: set[str]) -> list[str]:
+    """One line per target with nothing saved, else one per model that is
+    missing or no longer fits."""
+    lines = []
+    for target in TARGETS:
+        hint = f"run `tb ml train --target {target}`"
+        word = TARGET_WORDS[target]
+        mine = {m: r for (t, m), r in problems.items() if t == target}
+        if not mine:
+            continue
+        if target not in shown and all(r is None for r in mine.values()):
+            lines.append(f"{word}: no saved models; {hint}")
+            continue
+        for model, reason in mine.items():
+            lines.append(f"{word} ({model}): {reason or 'no saved model'}; {hint}")
+    return lines
 
 
 def prediction_state(conn, symbol: str, root: Path = MODELS_DIR,
@@ -124,19 +144,21 @@ def prediction_state(conn, symbol: str, root: Path = MODELS_DIR,
     close = float(closes.loc[open_time])
     atr_pct = sd.f1h["atr_pct"].iloc[-1]
     features = symbol_features(sd)
-    preds, skipped = [], []
+    preds, problems = [], {}       # (target, model) -> reason
     for h in HORIZONS:
         for target in TARGETS.values():
             for name in PREDICT_MODELS:
                 try:
                     model, meta = load_model(name, h, root, target.name)
+                    check_symbol(symbol, meta)
                 except FileNotFoundError:
-                    line = (f"next {h}h, {TARGET_WORDS[target.name]}: no saved models; "
-                            f"run `tb ml train --target {target.name}`")
-                    if line not in skipped:
-                        skipped.append(line)
+                    problems.setdefault((target.name, name), None)
                     continue
-                check_symbol(symbol, meta)
+                except ArtifactMismatch as exc:
+                    # one stale target must not hide the others
+                    problems.setdefault((target.name, name),
+                                        str(exc).split(": ", 1)[-1])
+                    continue
                 X = encode(features, symbol, tuple(meta["symbols"])).iloc[[-1]]
                 run = store.load_run(conn, meta["run_id"]) if meta.get("run_id") else None
                 s = run["metrics"]["models"].get(name) if run else None
@@ -154,6 +176,7 @@ def prediction_state(conn, symbol: str, root: Path = MODELS_DIR,
                 preds.append(HorizonPrediction(
                     probs=[float(v) for v in p],
                     meaning=_meaning(target.name, close, float(atr_pct), h), **common))
+    skipped = _skip_lines(problems, {p.target for p in preds})
     if not preds:
         raise FileNotFoundError("no saved models")
     now = now or datetime.now(timezone.utc)

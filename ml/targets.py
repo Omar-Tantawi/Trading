@@ -14,7 +14,7 @@ from typing import Callable
 import numpy as np
 import pandas as pd
 
-from ml.labels import make_labels
+from ml.labels import LABEL_SET, make_labels
 
 VOL_QUIET = 0.5
 VOL_WILD = 1.25
@@ -82,7 +82,7 @@ def _sd_index(sd):
 
 
 TARGETS: dict[str, Target] = {
-    "move3": Target("move3", ("down", "flat", "up"), 1,
+    "move3": Target("move3", ("down", "flat", "up"), LABEL_SET,
                     lambda sd, h: make_labels(sd.close.reindex(_sd_index(sd)),
                                               sd.f1h["atr_pct"], h)),
     "vol3": Target("vol3", ("quiet", "normal", "wild"), 1,

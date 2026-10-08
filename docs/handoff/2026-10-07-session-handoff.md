@@ -218,6 +218,18 @@ volatility as three buckets, direction as up/down.
 - Canaries (synthetic): vol3 and dir2 show no skill on a random walk; vol3
   finds clustered volatility (xgb +14 %); a leaked future return is caught
   for dir2. Class shares on the random walk: vol3 18 / 71 / 10 %.
+- Final review (fresh reviewer): no Critical; fixed the Important one
+  (a stale or mismatched model of one target no longer stops `tb predict`;
+  it prints one line per affected target/model with the right
+  `tb ml train --target` hint) and minors M1 (move3 label_set from
+  `ml.labels`), M2 (holdout count labelled "all targets": any target's look
+  spends the holdout), M3 (one skip line per target), M7 (vol3 hint shows
+  exact prices). Deferred: vol3 can drop a row the others keep if a 1h
+  candle is missing under an existing feature row (stricter, no leak);
+  no migration-upgrade test (checked by hand by the reviewer).
+- **Before any ml command on the PC: `tb db upgrade`** (applies 006). It is
+  one-way: after it, older code that reads `p_down` no longer works on that
+  database.
 - **Not yet run on real data.**
 
 ## 6. Next steps
