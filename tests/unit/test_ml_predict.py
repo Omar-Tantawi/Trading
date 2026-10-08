@@ -72,3 +72,23 @@ def test_python_m_data_cli_lists_ml_commands():
     out = subprocess.run([sys.executable, "-m", "data.cli", "predict", "--help"],
                          capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
+
+
+def test_render_shows_age_and_stale_warning():
+    fresh = _state()
+    fresh.age, fresh.stale = timedelta(minutes=30), False
+    text = render(fresh)
+    assert "30m ago" in text and "STALE" not in text
+    old = _state()
+    old.age, old.stale = timedelta(hours=21, minutes=4), True
+    text = render(old)
+    assert "21h 4m ago" in text
+    assert "STALE: these probabilities are for a bar that closed 21h 4m ago" in text
+    assert "tb backfill" in text
+    assert not ADVICE.search(text)
+
+
+def test_stale_rule_matches_tb_analyze():
+    from ml.predict import is_stale
+    assert not is_stale(timedelta(hours=2, minutes=5))
+    assert is_stale(timedelta(hours=2, minutes=6))

@@ -5,7 +5,7 @@ skill each model showed on unseen data. Describes; never recommends.
 """
 import math
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +13,7 @@ import pandas as pd
 
 from features.frame import build_cutoff, load_bars
 from features.store import read_features
+from features.summary import STALE_GRACE, _age
 from ml import store
 from ml.artifacts import MODELS_DIR, PREDICT_MODELS, ArtifactMismatch, load_model
 from ml.dataset import SymbolData, encode, symbol_features
@@ -28,6 +29,14 @@ def check_symbol(symbol: str, meta: dict) -> None:
     if symbol not in meta.get("symbols", []):
         raise ArtifactMismatch(f"{symbol} was not among the training symbols "
                                f"({', '.join(meta.get('symbols', []))})")
+
+
+_STEP = timedelta(hours=1)
+
+
+def is_stale(age: timedelta) -> bool:
+    """The tb analyze rule for a 1h bar: older than 2 bars plus grace."""
+    return age > 2 * _STEP + STALE_GRACE
 
 
 # Enough history for the newest 1h row and the 4h and 1d rows it joins.
@@ -56,6 +65,8 @@ class PredictionState:
     bar_open_time: datetime
     close: float
     predictions: list[HorizonPrediction]
+    age: timedelta | None = None     # now minus the bar's close
+    stale: bool = False
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -85,7 +96,8 @@ def _recent(conn, symbol: str) -> tuple[SymbolData, float]:
     return sd, bars["close"]
 
 
-def prediction_state(conn, symbol: str, root: Path = MODELS_DIR) -> PredictionState:
+def prediction_state(conn, symbol: str, root: Path = MODELS_DIR,
+                     now: datetime | None = None) -> PredictionState:
     """Raises FileNotFoundError when a model is missing and ArtifactMismatch
     when one no longer fits the code."""
     sd, closes = _recent(conn, symbol)
@@ -119,13 +131,22 @@ def prediction_state(conn, symbol: str, root: Path = MODELS_DIR) -> PredictionSt
                 p_down=float(p[0]), p_flat=float(p[1]), p_up=float(p[2]),
                 up_above=close * math.exp(thr), down_below=close * math.exp(-thr),
                 **common))
-    return PredictionState(symbol, open_time.to_pydatetime(), close, preds)
+    now = now or datetime.now(timezone.utc)
+    age = now - (open_time.to_pydatetime() + _STEP)
+    return PredictionState(symbol, open_time.to_pydatetime(), close, preds,
+                           age=age, stale=is_stale(age))
 
 
 def render(state: PredictionState) -> str:
     closed = state.bar_open_time + timedelta(hours=1)
+    ago = f", {_age(state.age)} ago" if state.age is not None else ""
     lines = [f"{state.symbol} probabilities from the 1h bar that closed "
-             f"{closed:%Y-%m-%d %H:%M} UTC (close {state.close:,.2f})", ""]
+             f"{closed:%Y-%m-%d %H:%M} UTC (close {state.close:,.2f}){ago}"]
+    if state.stale:
+        lines.append(f"STALE: these probabilities are for a bar that closed "
+                     f"{_age(state.age)} ago. Run `tb backfill` (or keep `tb live` "
+                     "running), then `tb predict` again.")
+    lines.append("")
     for p in state.predictions:
         fmt = "%H:%M" if p.outcome_time.date() == closed.date() else "%Y-%m-%d %H:%M"
         head = f"next {p.horizon}h (to {p.outcome_time:{fmt}} UTC), {p.model}: "

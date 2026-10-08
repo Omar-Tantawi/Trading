@@ -51,6 +51,7 @@ def test_train_then_predict_prints_every_horizon(db_conn, cli, tmp_path):
     # only the 4h models have a walk-forward run to quote
     assert "no walk-forward run recorded" in result.output
     assert "95% CI" in result.output
+    assert "STALE: these probabilities are for a bar that closed" in result.output
     assert not ADVICE.search(result.output)
 
 

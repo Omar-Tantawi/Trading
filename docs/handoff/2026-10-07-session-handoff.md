@@ -206,7 +206,11 @@ superpowers:executing-plans; ledger in the git-ignored `.superpowers/`).
    target revised to < 60 min), and the **holdout stays unused** for v1;
    it is saved for the model the project will rely on.
 2. Holdout: not for v1 (decided 2026-10-08).
-3. **User:** `tb ml train`, then `tb predict BTCUSDT` (pending).
+3. Done 2026-10-08: `tb ml train` saved all 6 models; `tb predict BTCUSDT`
+   printed every horizon with its skill line. It showed that predict did
+   not warn when the newest bar was old (21 h; `tb live` was not running).
+   Fixed: predict prints the bar's age and a STALE warning (same rule as
+   `tb analyze`).
 4. Give the user the sub-project 3 rulings, then
    superpowers:finishing-a-development-branch. **Ask before merging.**
 
