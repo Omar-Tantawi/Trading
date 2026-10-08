@@ -19,7 +19,7 @@ _FLOOR = 1e-6
 # fit without a better test score; stopping early also regularises.
 LOGREG_PARAMS = {"C": 0.1, "max_iter": 100}
 XGB_PARAMS = {
-    "objective": "multi:softprob", "num_class": N_CLASSES,
+    "objective": "multi:softprob",
     "max_depth": 4, "learning_rate": 0.05, "subsample": 0.8,
     "colsample_bytree": 0.8, "min_child_weight": 50, "tree_method": "hist",
     "seed": 0, "nthread": os.cpu_count() or 4, "verbosity": 0,
@@ -58,8 +58,10 @@ def fit_temperature(p: np.ndarray, y: np.ndarray) -> float:
 class Model:
     name = "model"
     calibrate = True
+    n_classes = N_CLASSES   # models pickled before 3b have no instance value
 
-    def __init__(self):
+    def __init__(self, n_classes: int = N_CLASSES):
+        self.n_classes = n_classes
         self.temperature = 1.0
 
     def fit(self, X_fit: pd.DataFrame, y_fit: np.ndarray,
@@ -96,7 +98,7 @@ class LogReg(Model):
         self.single = None
         if len(np.unique(y)) < 2:
             # Nothing to separate: fall back to the smoothed class shares.
-            counts = np.bincount(y, minlength=N_CLASSES) + 1.0
+            counts = np.bincount(y, minlength=self.n_classes) + 1.0
             self.single = counts / counts.sum()
             return
         from sklearn.exceptions import ConvergenceWarning
@@ -111,7 +113,7 @@ class LogReg(Model):
         if self.single is not None:
             return np.tile(self.single, (len(X), 1))
         Z = X[self.columns].fillna(self.fill).to_numpy(dtype=float)
-        p = np.zeros((len(X), N_CLASSES))
+        p = np.zeros((len(X), self.n_classes))
         p[:, self.model.classes_] = self.model.predict_proba(self.scaler.transform(Z))
         return _normalise(p)
 
@@ -124,17 +126,19 @@ class XGB(Model):
 
         self.columns = list(X.columns)
         data = xgb.DMatrix(X.to_numpy(dtype=float), label=y)
-        self.booster = xgb.train(XGB_PARAMS, data, num_boost_round=XGB_ROUNDS)
+        params = {**XGB_PARAMS, "num_class": self.n_classes}
+        self.booster = xgb.train(params, data, num_boost_round=XGB_ROUNDS)
 
     def _raw_proba(self, X):
         import xgboost as xgb
 
         data = xgb.DMatrix(X[self.columns].to_numpy(dtype=float))
-        return _normalise(self.booster.predict(data).reshape(len(X), N_CLASSES))
+        return _normalise(self.booster.predict(data).reshape(len(X), self.n_classes))
 
 
-def make_models() -> list[Model]:
-    """Fresh, unfitted models in report order."""
+def make_models(n_classes: int = N_CLASSES) -> list[Model]:
+    """Fresh, unfitted models in report order, for `n_classes` classes."""
     from ml.baselines import BaseRate, EmaCross, MacdSign, RsiZone
 
-    return [BaseRate(), EmaCross(), RsiZone(), MacdSign(), LogReg(), XGB()]
+    return [cls(n_classes) for cls in
+            (BaseRate, EmaCross, RsiZone, MacdSign, LogReg, XGB)]

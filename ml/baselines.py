@@ -11,8 +11,8 @@ import pandas as pd
 from ml.models import N_CLASSES, Model
 
 
-def _shares(y: np.ndarray) -> np.ndarray:
-    counts = np.bincount(y, minlength=N_CLASSES).astype(float) + 1.0
+def _shares(y: np.ndarray, n: int = N_CLASSES) -> np.ndarray:
+    counts = np.bincount(y, minlength=n).astype(float) + 1.0
     return counts / counts.sum()
 
 
@@ -24,7 +24,7 @@ class BaseRate(Model):
         # +1 smoothing, as the rule baselines: a class absent from the
         # training rows never gets probability 0 (which would inflate every
         # other model's skill).
-        self.p = _shares(y)
+        self.p = _shares(y, self.n_classes)
 
     def _raw_proba(self, X):
         return np.tile(self.p, (len(X), 1))
@@ -38,8 +38,8 @@ class RuleBaseline(Model):
 
     def _fit(self, X, y):
         states = self.state(X).to_numpy(dtype=float)
-        self.base = _shares(y)
-        self.table = {s: _shares(y[states == s])
+        self.base = _shares(y, self.n_classes)
+        self.table = {s: _shares(y[states == s], self.n_classes)
                       for s in np.unique(states[~np.isnan(states)])}
 
     def _raw_proba(self, X):
