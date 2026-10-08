@@ -6,7 +6,10 @@ const $ = (id) => document.getElementById(id);
 async function getJSON(url) {
   const r = await fetch(url);
   const body = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(body.detail || `${r.status} ${r.statusText}`);
+  if (!r.ok) {
+    const d = body.detail;
+    throw new Error(typeof d === "string" ? d : `${r.status} ${r.statusText}`);
+  }
   return body;
 }
 
@@ -39,14 +42,20 @@ const LC = window.LightweightCharts;
 let priceChart, rsiChart, candleSeries, emaSeries, rsiSeries;
 
 function makeCharts() {
-  const opts = { layout: { background: { color: "#ffffff" }, textColor: "#222" },
+  // autoSize follows the window; the same price-axis width on both charts
+  // keeps the candles and the RSI points lined up.
+  const opts = { autoSize: true, rightPriceScale: { minimumWidth: 70 },
+                 layout: { background: { color: "#ffffff" }, textColor: "#222" },
                  timeScale: { timeVisible: true, secondsVisible: false },
                  localization: { timeFormatter: (t) => new Date(t * 1000).toISOString().slice(0, 16).replace("T", " ") } };
   priceChart = LC.createChart($("price-chart"), opts);
   rsiChart = LC.createChart($("rsi-chart"), opts);
   candleSeries = priceChart.addSeries(LC.CandlestickSeries, {});
   emaSeries = priceChart.addSeries(LC.LineSeries, { color: "#f39c12", lineWidth: 2, title: "EMA 200" });
-  rsiSeries = rsiChart.addSeries(LC.LineSeries, { color: "#8e44ad", lineWidth: 1, title: "RSI 14" });
+  // Fixed 0-100 scale so the 30 and 70 guide lines are always visible.
+  rsiSeries = rsiChart.addSeries(LC.LineSeries, {
+    color: "#8e44ad", lineWidth: 1, title: "RSI 14",
+    autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }) });
   for (const level of [30, 70]) {
     rsiSeries.createPriceLine({ price: level, color: "#999", lineStyle: 2, lineWidth: 1 });
   }
@@ -57,13 +66,16 @@ function makeCharts() {
 
 const line = (bars, key) => bars.map((b) => (b[key] == null ? { time: b.time } : { time: b.time, value: b[key] }));
 
+let candleRequest = 0;
 async function loadCandles() {
+  const mine = ++candleRequest;
   const symbol = $("symbol").value, tf = $("timeframe").value;
   const status = $("chart-status");
   status.className = "status";
   status.textContent = "loading ...";
   try {
     const data = await getJSON(`/api/candles?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(tf)}&bars=500`);
+    if (mine !== candleRequest) return;   // a newer request has started
     candleSeries.setData(data.bars.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
     emaSeries.setData(line(data.bars, "ema_200"));
     rsiSeries.setData(line(data.bars, "rsi_14"));
@@ -81,6 +93,7 @@ async function loadCandles() {
         + ` · trend ${l.trend_regime || "-"} (ADX ${adx}) · volatility ${l.volatility_regime || "-"} (percentile ${vp})`;
     }
   } catch (e) {
+    if (mine !== candleRequest) return;
     status.className = "status error";
     status.textContent = `Could not load: ${e.message}`;
   }
@@ -119,8 +132,19 @@ async function loadModels() {
 let currentRun = null;
 async function showRun(id) {
   currentRun = id;
-  const run = await getJSON(`/api/runs/${id}`);
   $("run-detail").hidden = false;
+  $("run-title").textContent = `Run ${id}: loading ...`;
+  $("run-report").textContent = "";
+  $("diagnosis").textContent = "";
+  $("run-charts").textContent = "";
+  let run;
+  try {
+    run = await getJSON(`/api/runs/${id}`);
+  } catch (e) {
+    if (currentRun === id) $("run-title").textContent = `Run ${id}: could not load: ${e.message}`;
+    return;
+  }
+  if (currentRun !== id) return;          // another run was clicked meanwhile
   $("run-title").textContent = `Run ${id}: next ${run.horizon}h (${run.kind})`;
   $("run-report").textContent = run.report;
   $("diagnosis").textContent = "";
@@ -138,10 +162,12 @@ async function showRun(id) {
 }
 
 $("diagnose").addEventListener("click", async () => {
-  const out = $("diagnosis");
+  const out = $("diagnosis"), button = $("diagnose"), id = currentRun;
   out.textContent = "computing ...";
+  button.disabled = true;
   try {
-    const d = await getJSON(`/api/runs/${currentRun}/diagnose`);
+    const d = await getJSON(`/api/runs/${id}/diagnose`);
+    if (id !== currentRun) return;
     const t = document.createElement("table");
     const h = t.insertRow();
     for (const name of ["model", "size skill (move vs flat)", "95% CI", "direction skill (moves only)", "95% CI", "side right"]) cell(h, name);
@@ -154,7 +180,8 @@ $("diagnose").addEventListener("click", async () => {
     }
     out.textContent = "";
     out.appendChild(t);
-  } catch (e) { out.textContent = `Could not compute: ${e.message}`; }
+  } catch (e) { if (id === currentRun) out.textContent = `Could not compute: ${e.message}`; }
+  finally { button.disabled = false; }
 });
 
 // ---- health tab
@@ -168,7 +195,9 @@ async function loadHealth() {
       cell(r, s.symbol);
       cell(r, s.last_1m ? s.last_1m.slice(0, 16).replace("T", " ") : "no candles");
       cell(r, s.stale ? `${age(s.age_minutes)} STALE` : age(s.age_minutes), s.stale ? "stale" : "");
-      cell(r, s.features["1h"] ? s.features["1h"].slice(0, 16).replace("T", " ") : "not built");
+      for (const tf of ["5m", "15m", "1h", "4h", "1d"]) {
+        cell(r, s.features[tf] ? s.features[tf].slice(0, 16).replace("T", " ") : "not built");
+      }
       cell(r, s.verdict ? `${s.verdict} (${s.verdict_at.slice(0, 10)})` : "never checked");
     }
   } catch (e) { $("health-status").textContent = `Could not load: ${e.message}`; }

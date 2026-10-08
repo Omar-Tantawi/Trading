@@ -12,6 +12,7 @@ from typing import Callable
 
 import psycopg
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -29,6 +30,10 @@ STATIC = Path(__file__).parent / "static"
 def create_app(connect: Callable[[], psycopg.Connection]) -> FastAPI:
     app = FastAPI(title="AI Trading Buddy dashboard", docs_url=None,
                   redoc_url=None, openapi_url=None)
+    # Only requests addressed to this PC: blocks other web pages that try to
+    # reach the dashboard through DNS tricks.
+    app.add_middleware(TrustedHostMiddleware,
+                       allowed_hosts=["127.0.0.1", "localhost"])
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
     @contextmanager

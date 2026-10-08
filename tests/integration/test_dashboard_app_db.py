@@ -21,7 +21,7 @@ def client(db_conn, migrated_db, monkeypatch):
     get_settings.cache_clear()
     _insert(db_conn, "BTCUSDT", range(0, 10 * DAY_MINUTES))
     build_features(db_conn, "BTCUSDT", "1h")
-    yield TestClient(create_app(lambda: real_connect(migrated_db)))
+    yield TestClient(create_app(lambda: real_connect(migrated_db)), base_url="http://127.0.0.1")
     get_settings.cache_clear()
 
 

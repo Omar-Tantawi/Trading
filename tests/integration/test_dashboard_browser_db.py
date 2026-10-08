@@ -56,9 +56,21 @@ def test_every_tab_renders_without_errors(server):
         page.wait_for_function("document.getElementById('chart-status').textContent.includes('newest bar closed')")
         assert page.locator("#price-chart canvas").count() > 0
         assert "trend" in page.inner_text("#chart-status")
+        # the RSI scale always shows the 30 and 70 guide lines
+        lo, hi = page.evaluate("(() => { const r = rsiSeries.priceScale().getVisibleRange(); return [r.from, r.to]; })()")
+        assert lo <= 30 and hi >= 70
+        # charts follow the window size: no sideways scrolling
+        page.set_viewport_size({"width": 700, "height": 900})
+        page.wait_for_timeout(300)
+        assert page.evaluate("document.documentElement.scrollWidth") <= 700
 
         page.click("button[data-tab=models]")
         page.click(f"#runs tbody tr:has-text('{run_id}')")
+        page.wait_for_selector("#run-charts img")
+        page.click("#diagnose")
+        assert page.is_disabled("#diagnose")
+        page.wait_for_selector("#diagnosis table")
+        assert not page.is_disabled("#diagnose")
         page.wait_for_selector("#run-charts img")
         assert page.inner_text("#run-report").startswith(f"Run {run_id}")
         page.wait_for_function("[...document.querySelectorAll('#run-charts img')].every(i => i.complete && i.naturalWidth > 0)")
@@ -66,6 +78,8 @@ def test_every_tab_renders_without_errors(server):
         page.click("button[data-tab=health]")
         page.wait_for_selector("#health-table tbody tr")
         assert "STALE" in page.inner_text("#health-table")
+        for tf in ("5m", "15m", "1h", "4h", "1d"):
+            assert f"{tf} features" in page.inner_text("#health-table thead")
         page.screenshot(path=os.environ.get("DASHBOARD_SHOT", "/tmp/dashboard.png"), full_page=True)
         browser.close()
     assert errors == []

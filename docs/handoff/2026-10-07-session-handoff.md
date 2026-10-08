@@ -189,6 +189,15 @@ cloud session against the test database, including a Chromium smoke test
 (`tests/integration/test_dashboard_browser_db.py`, needs the `playwright`
 package, which is not a project dependency; skipped without it). Not yet
 opened on the PC with real data.
+Final review (fresh reviewer): no Critical/Important; one fix pass for
+8 minors (RSI scale fixed 0–100 so 30/70 show; candles query takes the
+newest N first, ~7 ms instead of 0.5–1.8 s on 5m in a 6-year probe; charts
+auto-size; out-of-order and error handling in the page; Diagnose button
+disabled while running; Host header check; times sent as UTC whatever the
+session zone; STALE age as `tb status`; health shows all five feature
+timeframes). Deferred minors: a 422's list `detail` would read "[object
+Object]" (cannot happen from the page); a future model not in
+`MODEL_ORDER` would show broken chart images.
 
 ## 6. Next steps
 

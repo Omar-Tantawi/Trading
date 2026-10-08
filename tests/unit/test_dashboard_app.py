@@ -22,7 +22,7 @@ def client(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://unused@127.0.0.1:1/none")
     from data.config import get_settings
     get_settings.cache_clear()
-    yield TestClient(create_app(_down))
+    yield TestClient(create_app(_down), base_url="http://127.0.0.1")
     get_settings.cache_clear()
 
 
@@ -65,3 +65,8 @@ def test_no_advice_words_in_page():
     for name in ("index.html", "app.js"):
         text = (STATIC / name).read_text()
         assert not ADVICE.search(text), (name, ADVICE.search(text))
+
+
+def test_foreign_host_header_refused(client):
+    assert client.get("/api/symbols", headers={"host": "evil.example"}).status_code == 400
+    assert client.get("/api/symbols", headers={"host": "127.0.0.1:8050"}).status_code == 200
