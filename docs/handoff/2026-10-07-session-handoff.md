@@ -3,7 +3,8 @@
 **Written:** 2026-10-07. Replaces the 2026-09-29 handoff, which described
 sub-project 1 (now merged into `master`).
 **Branch:** `master`. Sub-project 2a was merged on 2026-10-07 (`771af81`);
-sub-project 3 (prediction ML) was merged on 2026-10-08 (`4f59d75`).
+sub-project 3 (prediction ML) was merged on 2026-10-08 (`4f59d75`);
+sub-project 3.5 (dashboard) was merged on 2026-10-08 (`d43b093`).
 
 > Trust `git log` and the spec over this document if they ever disagree.
 
@@ -31,8 +32,7 @@ and vision-model parts are out of scope).
    2b (Market Profile, from `docs/research/2026-09-23-market-profile-hypotheses.md`) comes later.
 3. Prediction ML (baselines, XGBoost, walk-forward, calibration). **Done and
    merged** (v1: mostly a volatility forecaster; see §5b).
-   3.5. Minimal read-only dashboard. **Built on `feat/dashboard-3-5`
-   (2026-10-08); PC check and merge pending (§5c).**
+   3.5. Minimal read-only dashboard. **Done and merged** (§5c).
 4. Backtesting. 5. Signals, risk and portfolio. 6. Bot monitoring.
 7. Bot advisor. 8. LLM assistant (the user picks the LLM then).
 9. Full dashboard. 10. Demo, then shadow, then controlled real trading.
@@ -187,8 +187,10 @@ Spec `docs/superpowers/specs/2026-10-08-dashboard-3-5-design.md`, plan
 http://127.0.0.1:8050 with Chart, Models and Data health tabs. Tested in the
 cloud session against the test database, including a Chromium smoke test
 (`tests/integration/test_dashboard_browser_db.py`, needs the `playwright`
-package, which is not a project dependency; skipped without it). Not yet
-opened on the PC with real data.
+package, which is not a project dependency; skipped without it).
+**Checked by the user on the PC with real data (2026-10-08):** all three
+tabs work; size vs direction matches `tb ml diagnose`. Fixed after that
+check: SVG period labels were clipped (charts now 480 × 350).
 Final review (fresh reviewer): no Critical/Important; one fix pass for
 8 minors (RSI scale fixed 0–100 so 30/70 show; candles query takes the
 newest N first, ~7 ms instead of 0.5–1.8 s on 5m in a 6-year probe; charts
@@ -236,11 +238,13 @@ Object]" (cannot happen from the page); a future model not in
 4. Done 2026-10-08: rulings given to the user; merged into `master` with
    the user's approval (merged result: 242 unit + 117 db + 4 leakage
    canaries pass).
-5. The user chose 3.5 (dashboard): built, see §5c. **User:** `git pull` on
-   `feat/dashboard-3-5`, `pip install -e ".[dev]"`, `tb dashboard`, check
-   the three tabs; then merge (ask first). After that: 2b Market Profile or
-   "3b" (separate volatility and direction targets). The holdout (from
-   2025-10-01) is still unused; keep it so.
+5. Done 2026-10-08: 3.5 (dashboard) checked on the PC and merged into
+   `master` with the user's approval (merged result: 254 unit + 127 db
+   incl. the browser test + 4 leakage canaries pass).
+6. **Next:** ask the user (superpowers:brainstorming): 2b Market Profile,
+   or "3b" (separate volatility and direction targets), or 4 backtesting
+   (next in the build order). The holdout (from 2025-10-01) is still
+   unused; keep it so.
 
 ## 7. Open questions waiting on the user
 
