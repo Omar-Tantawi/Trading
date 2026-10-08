@@ -71,3 +71,13 @@ def test_runs_report_svgs_and_diagnose(client, db_conn):
     assert client.get(f"/api/runs/{run_id + 99}").status_code == 404
     d = client.get(f"/api/runs/{run_id}/diagnose").json()
     assert set(d) == {"xgb_v1"} and set(d["xgb_v1"]) == {"size", "direction"}
+
+
+def test_target_shown_and_diagnose_only_for_move3(client, db_conn):
+    run_id = _run(db_conn)
+    with db_conn.cursor() as cur:
+        cur.execute("UPDATE ml_runs SET target = 'dir2' WHERE run_id = %s", (run_id,))
+    db_conn.commit()
+    assert client.get("/api/runs").json()[-1]["target"] == "dir2"
+    r = client.get(f"/api/runs/{run_id}/diagnose")
+    assert r.status_code == 409 and "move3" in r.json()["detail"]

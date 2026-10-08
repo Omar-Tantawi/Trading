@@ -127,7 +127,9 @@ def create_app(connect: Callable[[], psycopg.Connection]) -> FastAPI:
     @app.get("/api/runs/{run_id}/diagnose")
     def diagnose(run_id: int):
         with db() as conn:
-            run_or_404(conn, run_id)
+            run = run_or_404(conn, run_id)
+            if run["target"] != "move3":
+                raise HTTPException(409, "size vs direction is only for move3 runs")
             pred = store.load_predictions(conn, run_id)
         return split_skill(pred)
 

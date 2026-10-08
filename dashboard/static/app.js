@@ -121,7 +121,7 @@ async function loadModels() {
     for (const run of runs.slice().reverse()) {
       const r = body.insertRow();
       r.className = "clickable";
-      cell(r, run.run_id); cell(r, run.kind); cell(r, `${run.horizon}h`);
+      cell(r, run.run_id); cell(r, run.target); cell(r, run.kind); cell(r, `${run.horizon}h`);
       cell(r, run.created_at.slice(0, 16).replace("T", " ")); cell(r, run.n_predictions.toLocaleString());
       cell(r, pct(run.xgb_skill));
       r.addEventListener("click", () => showRun(run.run_id));
@@ -145,7 +145,8 @@ async function showRun(id) {
     return;
   }
   if (currentRun !== id) return;          // another run was clicked meanwhile
-  $("run-title").textContent = `Run ${id}: next ${run.horizon}h (${run.kind})`;
+  $("run-title").textContent = `Run ${id}: ${run.target}, next ${run.horizon}h (${run.kind})`;
+  $("diagnose-row").hidden = run.target !== "move3";   // vol3/dir2 already split the question
   $("run-report").textContent = run.report;
   $("diagnosis").textContent = "";
   const charts = $("run-charts");
