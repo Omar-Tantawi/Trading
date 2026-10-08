@@ -2,8 +2,8 @@
 
 **Written:** 2026-10-07. Replaces the 2026-09-29 handoff, which described
 sub-project 1 (now merged into `master`).
-**Branch:** `feat/prediction-ml-3` (sub-project 3, built, not merged).
-Sub-project 2a was merged into `master` on 2026-10-07 (`771af81`).
+**Branch:** `master`. Sub-project 2a was merged on 2026-10-07 (`771af81`);
+sub-project 3 (prediction ML) was merged on 2026-10-08 (`4f59d75`).
 
 > Trust `git log` and the spec over this document if they ever disagree.
 
@@ -29,8 +29,8 @@ and vision-model parts are out of scope).
 1. Data foundation: **done, merged.**
 2. Market intelligence. **2a (features) is done and merged**;
    2b (Market Profile, from `docs/research/2026-09-23-market-profile-hypotheses.md`) comes later.
-3. Prediction ML (baselines, XGBoost, walk-forward, calibration). **Built on
-   `feat/prediction-ml-3`; real-data run pending (§6).**
+3. Prediction ML (baselines, XGBoost, walk-forward, calibration). **Done and
+   merged** (v1: mostly a volatility forecaster; see §5b).
    3.5. Minimal read-only dashboard.
 4. Backtesting. 5. Signals, risk and portfolio. 6. Bot monitoring.
 7. Bot advisor. 8. LLM assistant (the user picks the LLM then).
@@ -211,8 +211,13 @@ superpowers:executing-plans; ledger in the git-ignored `.superpowers/`).
    not warn when the newest bar was old (21 h; `tb live` was not running).
    Fixed: predict prints the bar's age and a STALE warning (same rule as
    `tb analyze`).
-4. Give the user the sub-project 3 rulings, then
-   superpowers:finishing-a-development-branch. **Ask before merging.**
+4. Done 2026-10-08: rulings given to the user; merged into `master` with
+   the user's approval (merged result: 242 unit + 117 db + 4 leakage
+   canaries pass).
+5. **Next:** ask the user which piece comes next (superpowers:brainstorming):
+   3.5 minimal dashboard (next in the build order), 2b Market Profile, or a
+   "3b" with a cleaner target (separate volatility and direction questions).
+   The holdout (from 2025-10-01) is still unused; keep it so.
 
 ## 7. Open questions waiting on the user
 
