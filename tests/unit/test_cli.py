@@ -179,3 +179,16 @@ def test_quality_exits_non_zero_when_any_symbol_fails(monkeypatch):
 def test_quality_exits_zero_on_pass_and_warn(monkeypatch):
     result = _quality_run(monkeypatch, {"BTCUSDT": "PASS", "ETHUSDT": "WARN"})
     assert result.exit_code == 0, result.output
+
+
+def test_dashboard_binds_localhost_only(monkeypatch):
+    from typer.testing import CliRunner
+
+    from data.cli import app
+    calls = {}
+    monkeypatch.setenv("DATABASE_URL", "postgresql://unused@127.0.0.1:1/none")
+    monkeypatch.setattr("uvicorn.run", lambda app_, **kw: calls.update(kw))
+    result = CliRunner().invoke(app, ["dashboard", "--port", "8123"])
+    assert result.exit_code == 0, result.output
+    assert calls["host"] == "127.0.0.1" and calls["port"] == 8123
+    assert "http://127.0.0.1:8123" in result.output

@@ -1,8 +1,8 @@
-# AI Trading Buddy — Data, Market Features and Prediction Models
+# AI Trading Buddy — Data, Market Features, Prediction Models and Dashboard
 
 Verified Binance market-data warehouse (sub-project 1), the market
-features computed from it (sub-project 2a) and prediction models measured
-on them (sub-project 3); see `docs/superpowers/specs/`
+features computed from it (sub-project 2a), prediction models measured
+on them (sub-project 3) and a small read-only dashboard (sub-project 3.5); see `docs/superpowers/specs/`
 for the designs and `docs/superpowers/plans/` for the implementation plans.
 
 ## First-time setup
@@ -210,6 +210,28 @@ advice**: nothing here says to buy or sell, and "flat" is a normal outcome.
   probabilities with the skill it showed on unseen data next to them.
 - Stored runs are never deleted automatically. To remove one (and its
   predictions): `DELETE FROM ml_runs WHERE run_id = 12;`.
+
+## Dashboard (sub-project 3.5)
+
+```bash
+.venv\Scripts\tb.exe dashboard
+```
+
+Then open **http://127.0.0.1:8050** in your browser. Stop it with Ctrl+C.
+`--port 8060` uses another port.
+
+- **Chart:** candles for any coin and timeframe, with EMA 200 and RSI 14,
+  and the newest bar's trend and volatility regime. Times are UTC
+  (Binance shows your local time).
+- **Models:** every `tb ml evaluate` run: the report, skill per test period,
+  calibration charts, and the size-vs-direction split on request.
+- **Data health:** newest candle per coin (STALE when the live collector is
+  not running), newest feature bar and the latest quality verdict.
+- **Read-only and local.** It only reads the database, listens on this PC
+  only (127.0.0.1), and loads nothing from the internet (the TradingView
+  Lightweight Charts library, Apache-2.0, is stored in
+  `dashboard/static/vendor/`). The page shows what is stored: run
+  `tb backfill` and `tb features build` first for fresh charts.
 
 ## Facts worth knowing
 
