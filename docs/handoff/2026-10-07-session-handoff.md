@@ -202,11 +202,11 @@ superpowers:executing-plans; ledger in the git-ignored `.superpowers/`).
    training size (CPU contention or line-search cost; not diagnosed).
    Results are the same as runs 1–3: logreg_v2 +0.7 % / −0.4 % / −4.4 %
    (1h / 4h / 24h), xgb_v1 unchanged (+1.3 % / +0.8 % / −0.6 %).
-   Open question for the user: accept ~50 min for this occasional command
-   (revise the spec target), or keep cutting time.
-2. Only after reading that report together, and with the user's agreement:
-   `tb ml evaluate --holdout` **once**.
-3. `tb ml train`, then `tb predict BTCUSDT`.
+   **Decided with the user (2026-10-08):** ~50 min is accepted (spec
+   target revised to < 60 min), and the **holdout stays unused** for v1;
+   it is saved for the model the project will rely on.
+2. Holdout: not for v1 (decided 2026-10-08).
+3. **User:** `tb ml train`, then `tb predict BTCUSDT` (pending).
 4. Give the user the sub-project 3 rulings, then
    superpowers:finishing-a-development-branch. **Ask before merging.**
 

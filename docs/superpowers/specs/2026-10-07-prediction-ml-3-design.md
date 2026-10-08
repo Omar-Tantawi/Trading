@@ -329,7 +329,9 @@ prints it. No advice words (test).
 
 ### 7.4 Performance targets
 
-- `tb ml evaluate` for all three horizons on the PC: under 30 minutes.
+- `tb ml evaluate` for all three horizons on the PC: under 60 minutes
+  (*revised with the user 2026-10-08* from 30: it is an occasional,
+  unattended command; the re-timed run took 51 min).
   The first real run took over an hour; it now prints a timestamped line per
   test period with each model's seconds, so the slow step is visible.
 - `tb predict`: under 30 seconds after a recent build.
@@ -386,5 +388,6 @@ prints it. No advice words (test).
 2. Read the report together. Record each model's skill and CI in the
    handoff, whatever they are.
 3. Only after that, and with the user's agreement, `tb ml evaluate
-   --holdout` once.
+   --holdout` once. *Decided with the user 2026-10-08:* not for v1; the
+   holdout is kept unused for the model the project will rely on.
 4. `tb ml train`, then `tb predict BTCUSDT` reads sensibly.
