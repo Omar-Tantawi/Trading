@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trading Buddy dashboard</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>AI Trading Buddy</h1>
+  <nav>
+    <button class="tab active" data-tab="chart">Chart</button>
+    <button class="tab" data-tab="models">Models</button>
+    <button class="tab" data-tab="health">Data health</button>
+  </nav>
+</header>
+
+<main>
+  <section id="chart" class="panel active">
+    <div class="controls">
+      <label>Symbol <select id="symbol"></select></label>
+      <label>Timeframe <select id="timeframe"></select></label>
+      <button id="refresh">Refresh</button>
+    </div>
+    <p id="chart-status" class="status"></p>
+    <div id="price-chart" class="chart"></div>
+    <p class="caption">RSI 14 (guide lines at 30 and 70)</p>
+    <div id="rsi-chart" class="chart small"></div>
+    <p class="caption">Candles with EMA 200. Times are UTC.</p>
+  </section>
+
+  <section id="models" class="panel">
+    <h2>Evaluation runs</h2>
+    <table id="runs"><thead><tr><th>run</th><th>kind</th><th>horizon</th>
+      <th>created (UTC)</th><th>predictions</th><th>xgb skill</th></tr></thead>
+      <tbody></tbody></table>
+    <div id="run-detail" hidden>
+      <h2 id="run-title"></h2>
+      <pre id="run-report"></pre>
+      <p><button id="diagnose">Compute size vs direction (may take a minute)</button></p>
+      <div id="diagnosis"></div>
+      <div id="run-charts" class="charts"></div>
+    </div>
+  </section>
+
+  <section id="health" class="panel">
+    <h2>Data health</h2>
+    <p class="status" id="health-status"></p>
+    <table id="health-table"><thead><tr><th>symbol</th><th>newest 1m candle (UTC)</th>
+      <th>age</th><th>newest 1h feature bar</th><th>quality</th></tr></thead>
+      <tbody></tbody></table>
+  </section>
+</main>
+
+<footer>Read-only. Numbers describe the past; nothing here is advice.</footer>
+<script src="/static/vendor/lightweight-charts.standalone.production.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
