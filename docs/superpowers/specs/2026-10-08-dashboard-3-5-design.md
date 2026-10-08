@@ -122,7 +122,7 @@ is advice."
 - **Skill per period:** one bar per test period (positive up, negative
   down), labelled `YYYY-MM`, a zero line, title with pooled skill and CI.
 
-Both are fixed-size (480 × 320), use `currentColor`-free explicit colours
+Both are fixed-size (480 × 350), use `currentColor`-free explicit colours
 readable on white, and escape every text they embed.
 
 ## 6. Testing

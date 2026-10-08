@@ -4,8 +4,8 @@ Pure: no database. Every embedded text is escaped.
 """
 from html import escape
 
-W, H = 480, 320
-L, R, T, B = 50, 16, 44, 40          # margins: left, right, top, bottom
+W, H = 480, 350
+L, R, T, B = 60, 16, 44, 64        # margins: left, right, top, bottom
 PW, PH = W - L - R, H - T - B        # plot width and height
 
 
