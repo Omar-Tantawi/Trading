@@ -196,7 +196,14 @@ superpowers:executing-plans; ledger in the git-ignored `.superpowers/`).
    both 1h and 4h (base rate's side: 50.8 % / 49.8 %), but its direction
    probabilities do not beat the base rate in log loss (1h only borderline),
    so that hit rate is not an established signal.
-   Still pending: the re-timed `tb ml evaluate` (with `logreg_v2`).
+   Re-timed `tb ml evaluate` (2026-10-08, runs 4–6, with `logreg_v2`):
+   **51 min** total (target < 30): data load 1:41, then about 17–18 min per
+   horizon. Per fit: xgb 16–86 s, logreg_v2 12–164 s, with no link to
+   training size (CPU contention or line-search cost; not diagnosed).
+   Results are the same as runs 1–3: logreg_v2 +0.7 % / −0.4 % / −4.4 %
+   (1h / 4h / 24h), xgb_v1 unchanged (+1.3 % / +0.8 % / −0.6 %).
+   Open question for the user: accept ~50 min for this occasional command
+   (revise the spec target), or keep cutting time.
 2. Only after reading that report together, and with the user's agreement:
    `tb ml evaluate --holdout` **once**.
 3. `tb ml train`, then `tb predict BTCUSDT`.
