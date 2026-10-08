@@ -29,7 +29,7 @@ def _run(conn):
     times = pd.date_range("2024-05-01", periods=4, freq="1h", tz="UTC")
     pred = pd.concat([pd.DataFrame({
         "model": m, "symbol": "BTCUSDT", "open_time": times, "fold": 0,
-        "label": [0, 1, 2, 1], "p_down": .2, "p_flat": .5, "p_up": .3})
+        "label": [0, 1, 2, 1], "p0": .2, "p1": .5, "p2": .3})
         for m in ("base_rate_v1", "xgb_v1")])
     model = {"log_loss": 1.0, "brier": .6, "accuracy": .5, "ece": .01, "skill": .01,
              "skill_lo": .0, "skill_hi": .02,

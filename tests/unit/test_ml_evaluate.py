@@ -27,8 +27,8 @@ def test_predictions_and_summary():
     n_test = sum(len(f.test_idx) for f in folds)
     assert len(pred) == 2 * n_test
     assert list(pred.columns) == ["model", "symbol", "open_time", "fold", "label",
-                                  "p_down", "p_flat", "p_up"]
-    assert np.allclose(pred[["p_down", "p_flat", "p_up"]].sum(axis=1), 1.0)
+                                  "p0", "p1", "p2"]
+    assert np.allclose(pred[["p0", "p1", "p2"]].sum(axis=1), 1.0)
     m = res.metrics
     assert m["horizon"] == 4 and m["n_test"] == n_test
     assert m["models"]["base_rate_v1"]["skill"] == 0.0
@@ -49,3 +49,15 @@ def test_progress_lines():
     assert len(lines) == len(folds)
     assert lines[0].startswith(f"  next 4h: period 1/{len(folds)} (2020-04)")
     assert "base_rate_v1" in lines[0] and "logreg_v2" in lines[0] and "s" in lines[0]
+
+
+def test_two_class_evaluation():
+    from ml.targets import get_target
+    data = {"BTCUSDT": random_walk_symbol(1, "2020-01-01", 4500)}
+    ds = build_dataset(data, 4, target=get_target("dir2"))
+    folds = walk_forward_folds(ds.tau, 4, CFG)
+    res = evaluate(ds, 4, folds, lambda: [BaseRate(2), LogReg(2)],
+                   classes=("down", "up"))
+    assert list(res.predictions.columns)[-2:] == ["p0", "p1"]
+    assert list(res.metrics["class_shares"]) == ["down", "up"]
+    assert res.metrics["models"]["base_rate_v1"]["skill"] == 0.0

@@ -1,5 +1,7 @@
 """The evaluation report (spec section 6): measurement, never advice."""
 
+from ml.targets import get_target
+
 BASE = "base_rate_v1"
 MODEL_ORDER = ("base_rate_v1", "ema_cross_v1", "rsi_v1", "macd_v1",
                "logreg_v1", "logreg_v2", "xgb_v1")
@@ -30,7 +32,8 @@ def render_report(run: dict) -> str:
     h = run["horizon"]
     models = _ordered(m["models"])
     lines = [
-        f"Run {run['run_id']} ({run['kind'].replace('_', '-')}), next {h}h, "
+        f"Run {run['run_id']} ({run['kind'].replace('_', '-')}), "
+        f"target {run.get('target', 'move3')}, next {h}h, "
         f"{', '.join(run['symbols'])}; data to "
         f"{run['data_end']:%Y-%m-%d %H:%M} UTC; {m['n_test']:,} test rows",
     ]
@@ -41,8 +44,9 @@ def render_report(run: dict) -> str:
             lines.append(f"Warning: the holdout has now been evaluated {n} times; "
                          "this result is no longer an unbiased estimate.")
     shares = m["class_shares"]
+    target = get_target(run.get("target", "move3"))
     lines.append("Outcomes in the test periods: " + ", ".join(
-        f"{c} {shares[c]:.0%}" for c in ("down", "flat", "up")))
+        f"{c} {shares[c]:.0%}" for c in target.classes if c in shares))
     lines.append("")
     lines.append(f"{'model':<14}{'log loss':>9}{'skill':>8}{'95% CI':>18}"
                  f"{'Brier':>8}{'acc':>7}{'ECE':>7}")

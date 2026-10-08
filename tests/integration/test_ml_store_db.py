@@ -18,8 +18,8 @@ def _pred():
     for model in ("base_rate_v1", "xgb_v1"):
         for t in times:
             rows.append({"model": model, "symbol": "BTCUSDT", "open_time": t,
-                         "fold": 0, "label": 1, "p_down": .2, "p_flat": .5,
-                         "p_up": .3})
+                         "fold": 0, "label": 1, "p0": .2, "p1": .5,
+                         "p2": .3})
     return pd.DataFrame(rows)
 
 
@@ -75,3 +75,20 @@ def test_holdout_count_is_as_of_the_run(db_conn):
     first = _save(db_conn, "holdout")
     _save(db_conn, "holdout")
     assert store.load_run(db_conn, first)["holdout_count"] == 1
+
+
+def test_two_class_run_round_trips_with_p2_null(db_conn):
+    pred = _pred().drop(columns="p2")
+    run_id = store.save_run(db_conn, kind="walk_forward", horizon=4, symbols=["BTCUSDT"],
+                            data_end=END, config={}, metrics={"models": {}},
+                            predictions=pred, target="dir2")
+    db_conn.commit()
+    assert store.load_run(db_conn, run_id)["target"] == "dir2"
+    back = store.load_predictions(db_conn, run_id)
+    assert back["p2"].isna().all() and (back["p0"] == .2).all()
+    assert store.list_runs(db_conn)[-1]["target"] == "dir2"
+
+
+def test_target_defaults_to_move3(db_conn):
+    run_id = _save(db_conn)
+    assert store.load_run(db_conn, run_id)["target"] == "move3"

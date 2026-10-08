@@ -31,8 +31,8 @@ def _pred(n=4000, seed=0, size_info=False, direction_info=False):
     rows = []
     for name, p in (("base_rate_v1", base), ("xgb_v1", model)):
         rows.append(pd.DataFrame({"model": name, "symbol": "BTCUSDT", "open_time": times,
-                                  "fold": 0, "label": label, "p_down": p[:, 0],
-                                  "p_flat": p[:, 1], "p_up": p[:, 2]}))
+                                  "fold": 0, "label": label, "p0": p[:, 0],
+                                  "p1": p[:, 1], "p2": p[:, 2]}))
     return pd.concat(rows, ignore_index=True)
 
 
