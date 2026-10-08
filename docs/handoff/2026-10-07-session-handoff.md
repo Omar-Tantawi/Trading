@@ -201,6 +201,25 @@ timeframes). Deferred minors: a 422's list `detail` would read "[object
 Object]" (cannot happen from the page); a future model not in
 `MODEL_ORDER` would show broken chart images.
 
+## 5d. Current state of sub-project 3b (volatility and direction targets)
+
+Branch `feat/targets-3b`. Spec `docs/superpowers/specs/2026-10-08-targets-3b-design.md`,
+plan `docs/superpowers/plans/2026-10-08-targets-3b.md`. Agreed with the user:
+volatility as three buckets, direction as up/down.
+
+- New targets beside `move3`: `vol3` (largest move either way during the
+  horizon vs `atr_pct·√H`: quiet < 0.5, wild ≥ 1.25) and `dir2` (sign of the
+  end-of-horizon return). `--target` on `tb ml evaluate` / `tb ml train`;
+  `tb predict` shows every target with saved models.
+- Migration `006_targets.sql`: `ml_runs.target` (default move3);
+  `ml_predictions` columns renamed `p0, p1, p2` (p2 NULL for dir2).
+- Models saved before 3b still load (move3 paths and a class default).
+- Also fixed: `tb predict` printed "ago ago" (bug since the STALE fix).
+- Canaries (synthetic): vol3 and dir2 show no skill on a random walk; vol3
+  finds clustered volatility (xgb +14 %); a leaked future return is caught
+  for dir2. Class shares on the random walk: vol3 18 / 71 / 10 %.
+- **Not yet run on real data.**
+
 ## 6. Next steps
 
 1. Done: the first `tb ml evaluate` on real data (results above).

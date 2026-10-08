@@ -63,3 +63,22 @@ def planted_signal_symbol(seed: int, start: str, hours: int,
         drift[k:] += 0.015 * (share[:-k] - 0.5)
     log_ret = rng.normal(0, SIGMA, hours) + drift
     return symbol_from_bars(_bars(log_ret, share, pd.Timestamp(start, tz="UTC"), rng))
+
+
+def clustered_vol_symbol(seed: int, start: str, hours: int) -> SymbolData:
+    """Volatility switches between calm and stormy spells of 1-4 days: busy
+    hours follow busy hours, which a volatility model can learn."""
+    rng = np.random.default_rng(seed)
+    sigma = np.empty(hours)
+    i = 0
+    while i < hours:
+        span = int(rng.integers(24, 96))
+        sigma[i:i + span] = rng.choice([SIGMA / 3, SIGMA * 2])
+        i += span
+    share = rng.uniform(0.3, 0.7, hours)
+    bars = _bars(rng.normal(0, 1, hours) * sigma, share, pd.Timestamp(start, tz="UTC"), rng)
+    # intrabar wicks follow the spell too
+    wick = np.abs(rng.normal(0, 1, hours)) * sigma / 2
+    bars["high"] = np.maximum(bars["open"], bars["close"]) * np.exp(wick)
+    bars["low"] = np.minimum(bars["open"], bars["close"]) * np.exp(-wick)
+    return symbol_from_bars(bars)
