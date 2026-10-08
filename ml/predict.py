@@ -88,7 +88,7 @@ def _recent(conn, symbol: str) -> tuple[SymbolData, float]:
     start = cutoff - _RECENT
     bars = load_bars(conn, symbol, "1h", start, cutoff)
     sd = SymbolData(
-        close=bars["close"],
+        close=bars["close"], high=bars["high"], low=bars["low"],
         f1h=read_features(conn, symbol, "1h", start),
         f4h=read_features(conn, symbol, "4h", start),
         f1d=read_features(conn, symbol, "1d", start),

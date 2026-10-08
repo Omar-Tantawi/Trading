@@ -42,9 +42,9 @@ def check_fresh(conn, symbols) -> None:
 
 def load_symbol_data(conn, symbol: str) -> SymbolData:
     cutoff = build_cutoff(conn, symbol, "1h")
-    close = load_bars(conn, symbol, "1h", None, cutoff)["close"]
+    bars = load_bars(conn, symbol, "1h", None, cutoff)
     return SymbolData(
-        close=close,
+        close=bars["close"], high=bars["high"], low=bars["low"],
         f1h=read_features(conn, symbol, "1h"),
         f4h=read_features(conn, symbol, "4h"),
         f1d=read_features(conn, symbol, "1d"),

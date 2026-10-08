@@ -35,7 +35,7 @@ def _resample(bars: pd.DataFrame, rule: str) -> pd.DataFrame:
 def symbol_from_bars(bars: pd.DataFrame) -> SymbolData:
     b4, b1d = _resample(bars, "4h"), _resample(bars, "1D")
     return SymbolData(
-        close=bars["close"],
+        close=bars["close"], high=bars["high"], low=bars["low"],
         f1h=compute_features(bars, timedelta(hours=1)),
         f4h=compute_features(b4, timedelta(hours=4)),
         f1d=compute_features(b1d, timedelta(days=1)),

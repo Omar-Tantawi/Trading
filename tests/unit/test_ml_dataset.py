@@ -90,3 +90,13 @@ def test_build_dataset_sorted_and_labelled():
     assert set(np.unique(ds.y)) <= {0, 1, 2}
     assert set(ds.symbol) == {"BTCUSDT", "ETHUSDT"}
     assert "symbol=BTCUSDT" in ds.X.columns
+
+
+def test_build_dataset_for_dir2_and_vol3():
+    from ml.targets import get_target
+    sd = _symbol_data(200)
+    sd.high, sd.low = sd.close * 1.002, sd.close * 0.998
+    ds = build_dataset({"BTCUSDT": sd}, 4, target=get_target("dir2"))
+    assert set(np.unique(ds.y)) <= {0, 1}
+    vol = build_dataset({"BTCUSDT": sd}, 4, target=get_target("vol3"))
+    assert set(np.unique(vol.y)) <= {0, 1, 2} and len(vol.y) == 200 - 4
