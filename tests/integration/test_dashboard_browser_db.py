@@ -58,7 +58,7 @@ def test_every_tab_renders_without_errors(server):
         assert "trend" in page.inner_text("#chart-status")
         # the RSI scale always shows the 30 and 70 guide lines
         lo, hi = page.evaluate("(() => { const r = rsiSeries.priceScale().getVisibleRange(); return [r.from, r.to]; })()")
-        assert lo <= 30 and hi >= 70
+        assert lo <= 0.5 and hi >= 99.5   # the fixed 0-100 scale
         # charts follow the window size: no sideways scrolling
         page.set_viewport_size({"width": 700, "height": 900})
         page.wait_for_timeout(300)
