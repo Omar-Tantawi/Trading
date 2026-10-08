@@ -60,10 +60,11 @@ def test_evaluate_runs_report_and_holdout(db_conn, cli):
     assert re.search(r"\[\d\d:\d\d\] done", result.output)
 
     listed = cli.invoke(app, ["ml", "runs"])
-    assert listed.exit_code == 0 and "walk_forward" in listed.output
+    assert listed.exit_code == 0
     with db_conn.cursor() as cur:
         cur.execute("SELECT max(run_id), max(data_end) FROM ml_runs")
         run_id, data_end = cur.fetchone()
+    assert f" {run_id} " in listed.output
     # a walk-forward run never reaches into the holdout
     assert data_end <= SMALL_FOLDS.holdout_start
     again = cli.invoke(app, ["ml", "report", str(run_id)])
@@ -79,3 +80,20 @@ def test_evaluate_runs_report_and_holdout(db_conn, cli):
         assert held.exit_code == 0, held.output
         assert f"Holdout evaluations for this horizon so far: {n}" in held.output
     assert "no longer an unbiased estimate" in held.output
+
+
+def test_evaluate_with_target_dir2_and_diagnose_refuses(db_conn, cli):
+    _insert(db_conn, "BTCUSDT", range(0, DAYS * DAY_MINUTES))
+    assert cli.invoke(app, ["features", "build"]).exit_code == 0
+    assert cli.invoke(app, ["ml", "evaluate", "--target", "nope"]).exit_code != 0
+    result = cli.invoke(app, ["ml", "evaluate", "--target", "dir2", "--horizon", "4"])
+    assert result.exit_code == 0, result.output
+    assert "target dir2" in result.output and "Outcomes in the test periods: down" in result.output
+    assert "flat" not in result.output.split("Outcomes in the test periods:")[1].splitlines()[0]
+    with db_conn.cursor() as cur:
+        cur.execute("SELECT max(run_id) FROM ml_runs WHERE target = 'dir2'")
+        run_id = cur.fetchone()[0]
+    assert run_id is not None
+    assert "dir2" in cli.invoke(app, ["ml", "runs"]).output
+    diag = cli.invoke(app, ["ml", "diagnose", str(run_id)])
+    assert diag.exit_code == 1 and "only for move3" in diag.output

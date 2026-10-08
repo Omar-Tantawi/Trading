@@ -4,7 +4,7 @@ Reads the newest 1h feature row, applies the saved models and quotes the
 skill each model showed on unseen data. Describes; never recommends.
 """
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -18,6 +18,7 @@ from ml import store
 from ml.artifacts import MODELS_DIR, PREDICT_MODELS, ArtifactMismatch, load_model
 from ml.dataset import SymbolData, encode, symbol_features
 from ml.labels import HORIZONS, threshold
+from ml.targets import TARGETS, VOL_QUIET, VOL_WILD
 from ml.report import verdict
 
 class NoRecentFeatures(Exception):
@@ -43,15 +44,17 @@ def is_stale(age: timedelta) -> bool:
 _RECENT = timedelta(days=3)
 
 
+TARGET_WORDS = {"move3": "move", "vol3": "volatility", "dir2": "direction"}
+
+
 @dataclass
 class HorizonPrediction:
     horizon: int
     model: str
-    p_down: float | None
-    p_flat: float | None
-    p_up: float | None
-    up_above: float | None
-    down_below: float | None
+    target: str
+    classes: tuple[str, ...]
+    probs: list[float] | None        # one per class; None with a note
+    meaning: str | None              # what the classes mean in prices
     outcome_time: datetime
     skill: float | None
     skill_lo: float | None
@@ -67,6 +70,7 @@ class PredictionState:
     predictions: list[HorizonPrediction]
     age: timedelta | None = None     # now minus the bar's close
     stale: bool = False
+    skipped: list[str] = field(default_factory=list)   # targets without models
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -96,10 +100,23 @@ def _recent(conn, symbol: str) -> tuple[SymbolData, float]:
     return sd, bars["close"]
 
 
+def _meaning(target: str, close: float, atr_pct: float, horizon: int) -> str | None:
+    if target == "move3":
+        thr = threshold(atr_pct, horizon)
+        return (f"up = close above {close * math.exp(thr):,.0f}; "
+                f"down = below {close * math.exp(-thr):,.0f}")
+    if target == "vol3":
+        unit = atr_pct * math.sqrt(horizon)
+        return (f"quiet = stays within {math.exp(VOL_QUIET * unit) - 1:.2%} of "
+                f"{close:,.0f}; wild = moves {math.exp(VOL_WILD * unit) - 1:.2%} or more")
+    return None
+
+
 def prediction_state(conn, symbol: str, root: Path = MODELS_DIR,
                      now: datetime | None = None) -> PredictionState:
-    """Raises FileNotFoundError when a model is missing and ArtifactMismatch
-    when one no longer fits the code."""
+    """Every target with saved models, for each horizon. Raises
+    FileNotFoundError when no model of any target is saved, and
+    ArtifactMismatch when one no longer fits the code."""
     sd, closes = _recent(conn, symbol)
     if sd.f1h.empty:
         raise NoRecentFeatures(f"{symbol}: no 1h features from the last 3 days")
@@ -107,55 +124,63 @@ def prediction_state(conn, symbol: str, root: Path = MODELS_DIR,
     close = float(closes.loc[open_time])
     atr_pct = sd.f1h["atr_pct"].iloc[-1]
     features = symbol_features(sd)
-    preds = []
+    preds, skipped = [], []
     for h in HORIZONS:
-        for name in PREDICT_MODELS:
-            model, meta = load_model(name, h, root)
-            check_symbol(symbol, meta)
-            X = encode(features, symbol, tuple(meta["symbols"])).iloc[[-1]]
-            run = store.load_run(conn, meta["run_id"]) if meta.get("run_id") else None
-            s = run["metrics"]["models"].get(name) if run else None
-            outcome = (open_time + pd.Timedelta(hours=h + 1)).to_pydatetime()
-            common = dict(horizon=h, model=name, outcome_time=outcome,
-                          skill=s and s["skill"], skill_lo=s and s["skill_lo"],
-                          skill_hi=s and s["skill_hi"])
-            if pd.isna(atr_pct):
+        for target in TARGETS.values():
+            for name in PREDICT_MODELS:
+                try:
+                    model, meta = load_model(name, h, root, target.name)
+                except FileNotFoundError:
+                    line = (f"next {h}h, {TARGET_WORDS[target.name]}: no saved models; "
+                            f"run `tb ml train --target {target.name}`")
+                    if line not in skipped:
+                        skipped.append(line)
+                    continue
+                check_symbol(symbol, meta)
+                X = encode(features, symbol, tuple(meta["symbols"])).iloc[[-1]]
+                run = store.load_run(conn, meta["run_id"]) if meta.get("run_id") else None
+                s = run["metrics"]["models"].get(name) if run else None
+                common = dict(horizon=h, model=name, target=target.name,
+                              classes=target.classes,
+                              outcome_time=(open_time + pd.Timedelta(hours=h + 1)).to_pydatetime(),
+                              skill=s and s["skill"], skill_lo=s and s["skill_lo"],
+                              skill_hi=s and s["skill_hi"])
+                if pd.isna(atr_pct):
+                    preds.append(HorizonPrediction(
+                        probs=None, meaning=None,
+                        note="atr_pct missing; no prediction", **common))
+                    continue
+                p = predict_rows(model, X, meta)[0]
                 preds.append(HorizonPrediction(
-                    p_down=None, p_flat=None, p_up=None, up_above=None,
-                    down_below=None, note="atr_pct missing; no prediction",
-                    **common))
-                continue
-            p = predict_rows(model, X, meta)[0]
-            thr = threshold(float(atr_pct), h)
-            preds.append(HorizonPrediction(
-                p_down=float(p[0]), p_flat=float(p[1]), p_up=float(p[2]),
-                up_above=close * math.exp(thr), down_below=close * math.exp(-thr),
-                **common))
+                    probs=[float(v) for v in p],
+                    meaning=_meaning(target.name, close, float(atr_pct), h), **common))
+    if not preds:
+        raise FileNotFoundError("no saved models")
     now = now or datetime.now(timezone.utc)
     age = now - (open_time.to_pydatetime() + _STEP)
     return PredictionState(symbol, open_time.to_pydatetime(), close, preds,
-                           age=age, stale=is_stale(age))
+                           age=age, stale=is_stale(age), skipped=skipped)
 
 
 def render(state: PredictionState) -> str:
     closed = state.bar_open_time + timedelta(hours=1)
-    ago = f", {_age(state.age)} ago" if state.age is not None else ""
+    ago = f", {_age(state.age)}" if state.age is not None else ""   # _age says "ago"
     lines = [f"{state.symbol} probabilities from the 1h bar that closed "
              f"{closed:%Y-%m-%d %H:%M} UTC (close {state.close:,.2f}){ago}"]
     if state.stale:
         lines.append(f"STALE: these probabilities are for a bar that closed "
-                     f"{_age(state.age)} ago. Run `tb backfill` (or keep `tb live` "
+                     f"{_age(state.age)}. Run `tb backfill` (or keep `tb live` "
                      "running), then `tb predict` again.")
     lines.append("")
     for p in state.predictions:
         fmt = "%H:%M" if p.outcome_time.date() == closed.date() else "%Y-%m-%d %H:%M"
-        head = f"next {p.horizon}h (to {p.outcome_time:{fmt}} UTC), {p.model}: "
+        head = (f"next {p.horizon}h (to {p.outcome_time:{fmt}} UTC), {p.model}, "
+                f"{TARGET_WORDS.get(p.target, p.target)}: ")
         if p.note:
             lines.append(head + p.note)
         else:
-            lines.append(
-                head + f"down {p.p_down:.0%} | flat {p.p_flat:.0%} | up {p.p_up:.0%}  "
-                f"(up = close above {p.up_above:,.0f}; down = below {p.down_below:,.0f})")
+            probs = " | ".join(f"{c} {v:.0%}" for c, v in zip(p.classes, p.probs))
+            lines.append(head + probs + (f"  ({p.meaning})" if p.meaning else ""))
         if p.skill is None:
             lines.append("    no walk-forward run recorded for this model")
         else:
@@ -163,6 +188,9 @@ def render(state: PredictionState) -> str:
             if p.skill_lo <= 0:
                 line += "; this model has not shown skill on unseen data"
             lines.append(line)
+    if state.skipped:
+        lines.append("")
+        lines.extend(state.skipped)
     lines.append("")
     lines.append("Probabilities are measurements of how similar past situations "
                  "turned out, not advice.")

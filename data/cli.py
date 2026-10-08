@@ -31,6 +31,7 @@ from ml.models import make_models
 from ml.predict import NoRecentFeatures, prediction_state
 from ml.predict import render as render_prediction
 from ml.labels import HORIZONS
+from ml.targets import TARGETS, get_target
 from ml.load import StaleFeaturesError, check_fresh, load_symbol_data, run_config
 from ml.report import render_report
 
@@ -371,6 +372,16 @@ def _data_end(tau, folds, horizon: int) -> datetime:
     return (last + timedelta(hours=horizon)).to_pydatetime()
 
 
+def _target(name: str):
+    try:
+        return get_target(name)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc))
+
+
+TARGET_HELP = "What to predict: " + ", ".join(TARGETS) + " (default move3)"
+
+
 def _horizons(values: list[int] | None) -> tuple[int, ...]:
     if not values:
         return HORIZONS
@@ -388,8 +399,10 @@ def ml_evaluate_cmd(
         None, "--horizon", help="Hours ahead (1, 4 or 24); repeatable; default all"),
     holdout: bool = typer.Option(
         False, "--holdout", help="Test on the final holdout period (counted)"),
+    target: str = typer.Option("move3", "--target", help=TARGET_HELP),
 ):
     """Walk-forward test of every model; stores the run and prints a report."""
+    tgt = _target(target)
     horizons = _horizons(horizon)
     _setup_logging()
     symbols = get_settings().symbols
@@ -405,7 +418,7 @@ def ml_evaluate_cmd(
         data = _ml_data(conn, symbols)
         say("data loaded")
         for h in horizons:
-            ds = build_dataset(data, h, tuple(symbols))
+            ds = build_dataset(data, h, tuple(symbols), tgt)
             if holdout:
                 fold = holdout_fold(ds.tau, h, ML_FOLDS)
                 folds = [fold] if fold else []
@@ -415,13 +428,13 @@ def ml_evaluate_cmd(
                 console.print(f"next {h}h: no test rows; nothing evaluated")
                 continue
             say(f"next {h}h: {len(ds.X):,} rows, {len(folds)} test periods")
-            result = ml_evaluate(ds, h, folds, progress=say)
+            result = ml_evaluate(ds, h, folds, progress=say, classes=tgt.classes)
             say(f"next {h}h: saving {len(result.predictions):,} predictions")
             run_id = ml_store.save_run(
                 conn, kind="holdout" if holdout else "walk_forward", horizon=h,
                 symbols=symbols, data_end=_data_end(ds.tau, folds, h),
-                config=run_config(h, ML_FOLDS), metrics=result.metrics,
-                predictions=result.predictions)
+                config=run_config(h, ML_FOLDS, tgt.name), metrics=result.metrics,
+                predictions=result.predictions, target=tgt.name)
             conn.commit()
             console.print(render_report(ml_store.load_run(conn, run_id)),
                           markup=False, highlight=False, soft_wrap=True)
@@ -434,11 +447,11 @@ def ml_runs_cmd():
     """List stored evaluation runs."""
     with connect() as conn:
         runs = ml_store.list_runs(conn)
-    table = Table("run", "kind", "horizon", "created (UTC)", "predictions",
-                  "xgb skill")
+    table = Table("run", "target", "kind", "horizon", "created (UTC)",
+                  "predictions", "xgb skill")
     for r in runs:
         skill = "-" if r["xgb_skill"] is None else f"{r['xgb_skill']:+.1%}"
-        table.add_row(str(r["run_id"]), r["kind"], f"{r['horizon']}h",
+        table.add_row(str(r["run_id"]), r["target"], r["kind"], f"{r['horizon']}h",
                       f"{r['created_at']:%Y-%m-%d %H:%M}",
                       f"{r['n_predictions']:,}", skill)
     console.print(table)
@@ -456,18 +469,19 @@ def ml_report_cmd(run_id: int = typer.Argument(..., help="From tb ml runs")):
 
 
 @ml_app.command("train")
-def ml_train_cmd():
+def ml_train_cmd(target: str = typer.Option("move3", "--target", help=TARGET_HELP)):
     """Fit the prediction models on all labelled history and save them."""
+    tgt = _target(target)
     _setup_logging()
     symbols = get_settings().symbols
     trained_at = datetime.now(timezone.utc)
     with connect() as conn:
         data = _ml_data(conn, symbols)
         for h in HORIZONS:
-            ds = build_dataset(data, h, tuple(symbols))
+            ds = build_dataset(data, h, tuple(symbols), tgt)
             fit, cal = final_split(ds.tau, h, ML_FOLDS.cal_fraction)
-            run_id = ml_store.latest_run_id(conn, h)
-            for model in make_models():
+            run_id = ml_store.latest_run_id(conn, h, target=tgt.name)
+            for model in make_models(tgt.n_classes):
                 if model.name not in PREDICT_MODELS:
                     continue
                 model.fit(ds.X.iloc[fit], ds.y[fit], ds.X.iloc[cal], ds.y[cal])
@@ -476,8 +490,8 @@ def ml_train_cmd():
                     "train_start": ds.tau.min().isoformat(),
                     "train_end": ds.tau.max().isoformat(),
                     "trained_at": trained_at.isoformat(),
-                })
-                console.print(f"next {h}h {model.name}: {len(fit) + len(cal):,} rows "
+                }, target=tgt.name)
+                console.print(f"{tgt.name} next {h}h {model.name}: {len(fit) + len(cal):,} rows "
                               f"to {ds.tau.max():%Y-%m-%d %H:%M} UTC -> {path}",
                               markup=False, soft_wrap=True)
 
@@ -527,6 +541,11 @@ def ml_diagnose_cmd(run_id: int = typer.Argument(..., help="From tb ml runs")):
         run = ml_store.load_run(conn, run_id)
         if run is None:
             console.print(f"[red]no run {run_id}[/red]")
+            raise typer.Exit(code=1)
+        if run["target"] != "move3":
+            console.print(f"run {run_id} is a {run['target']} run; size vs direction "
+                          "is only for move3 runs (vol3 and dir2 already ask those "
+                          "questions separately)", markup=False, soft_wrap=True)
             raise typer.Exit(code=1)
         pred = ml_store.load_predictions(conn, run_id)
     console.print(render_diagnosis(run_id, run["horizon"], split_skill(pred)),

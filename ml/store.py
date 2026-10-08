@@ -55,10 +55,11 @@ def holdout_count(conn, horizon: int, up_to_run: int | None = None) -> int:
         return cur.fetchone()[0]
 
 
-def latest_run_id(conn, horizon: int, kind: str = "walk_forward") -> int | None:
+def latest_run_id(conn, horizon: int, kind: str = "walk_forward",
+                  target: str = "move3") -> int | None:
     with conn.cursor() as cur:
         cur.execute("SELECT max(run_id) FROM ml_runs WHERE kind = %s "
-                    "AND horizon = %s", (kind, horizon))
+                    "AND horizon = %s AND target = %s", (kind, horizon, target))
         return cur.fetchone()[0]
 
 

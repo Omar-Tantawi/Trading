@@ -39,3 +39,23 @@ def test_load_refuses_other_feature_set(tmp_path):
     (path / "meta.json").write_text(json.dumps(meta))
     with pytest.raises(ArtifactMismatch, match="feature set"):
         load_model("logreg_v2", 1, tmp_path)
+
+
+def test_target_paths_and_mismatch(tmp_path):
+    model, X = _fitted()
+    assert save_model(model, 4, {}, tmp_path, target="vol3") == tmp_path / "vol3_logreg_v2_h4"
+    back, meta = load_model("logreg_v2", 4, tmp_path, target="vol3")
+    assert meta["target"] == "vol3"
+    meta_path = tmp_path / "vol3_logreg_v2_h4" / "meta.json"
+    m = json.loads(meta_path.read_text()); m["target"] = "dir2"
+    meta_path.write_text(json.dumps(m))
+    with pytest.raises(ArtifactMismatch, match="target"):
+        load_model("logreg_v2", 4, tmp_path, target="vol3")
+
+
+def test_move3_models_saved_before_3b_load(tmp_path):
+    model, _ = _fitted()
+    path = save_model(model, 1, {}, tmp_path)
+    m = json.loads((path / "meta.json").read_text()); del m["target"]
+    (path / "meta.json").write_text(json.dumps(m))
+    load_model("logreg_v2", 1, tmp_path)            # move3 assumed

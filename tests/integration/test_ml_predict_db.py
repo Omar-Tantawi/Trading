@@ -47,7 +47,7 @@ def test_train_then_predict_prints_every_horizon(db_conn, cli, tmp_path):
     assert result.exit_code == 0, result.output
     for h in (1, 4, 24):
         for model in ("logreg_v2", "xgb_v1"):
-            assert f"next {h}h" in result.output and f"{model}: down" in result.output
+            assert f"next {h}h" in result.output and f"{model}, move: down" in result.output
     # only the 4h models have a walk-forward run to quote
     assert "no walk-forward run recorded" in result.output
     assert "95% CI" in result.output
@@ -60,3 +60,21 @@ def test_predict_without_recent_features_exits_1(db_conn, cli):
     result = cli.invoke(app, ["predict", "BTCUSDT", "--no-build"])
     assert result.exit_code == 1, result.output
     assert "run `tb features build` first" in result.output
+
+
+def test_train_vol3_then_predict_shows_it_and_skips_dir2(db_conn, cli, tmp_path):
+    _insert(db_conn, "BTCUSDT", range(0, DAYS * DAY_MINUTES))
+    assert cli.invoke(app, ["features", "build"]).exit_code == 0
+    for target in ("move3", "vol3"):
+        r = cli.invoke(app, ["ml", "evaluate", "--target", target, "--horizon", "4"])
+        assert r.exit_code == 0, r.output
+        r = cli.invoke(app, ["ml", "train", "--target", target])
+        assert r.exit_code == 0, r.output
+    assert (tmp_path / "models" / "vol3_xgb_v1_h4" / "meta.json").exists()
+    assert (tmp_path / "models" / "xgb_v1_h4" / "meta.json").exists()
+    out = cli.invoke(app, ["predict", "BTCUSDT", "--no-build"])
+    assert out.exit_code == 0, out.output
+    assert "xgb_v1, volatility: quiet" in out.output and "wild" in out.output
+    assert "direction: no saved models; run `tb ml train --target dir2`" in out.output
+    assert "xgb_v1, move: down" in out.output
+    assert not ADVICE.search(out.output)
