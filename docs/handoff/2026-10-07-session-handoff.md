@@ -359,7 +359,11 @@ bots are spot grids.
    user's approval (merged result: 296 unit + 137 db + 8 leakage canaries
    pass). Also fixed: `backtest` was missing from pyproject's package list
    (a test now checks every package is listed).
-8. **Next:** ask the user (superpowers:brainstorming). Candidates: a better
+8. In progress (branch `feat/backtest-keep-pause`, user's choice): the
+   better pause. `grid_keep_vol3_25/30/35` and `grid_keep_random_30` cancel
+   the grid's orders and keep the coin on paused days; three more
+   comparison lines. Not yet run on real data.
+9. **Then:** ask the user (superpowers:brainstorming). Candidates: a better
    pause for the grid backtest (keep the coin and cancel orders on wild
    days instead of a full exit, which costs about what the forecast's
    timing saves); a dir2 direction backtest with fees; 2b Market Profile;

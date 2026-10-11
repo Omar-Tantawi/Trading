@@ -99,6 +99,7 @@ can be added later as another strategy.
 | `grid_always` | Run the grid. |
 | `grid_vol3_25`, `_30`, `_35` | Run the grid unless P(wild) ≥ 0.25 / 0.30 / 0.35; then WAIT in USDT. |
 | `grid_random_30` | Pause on random days (fixed seed), as many as `grid_vol3_30` pauses. |
+| `grid_keep_vol3_25`, `_30`, `_35`, `grid_keep_random_30` | *Added 2026-10-11 (user's choice after the first results):* the same pause rules, but a paused day cancels the grid's orders and **keeps the coin** (no exit trade, no fee or slippage); the next running day re-centres from what is held. `grid_keep_random_30` pauses on exactly the days `grid_random_30` pauses. |
 
 *Ruling:* three fixed thresholds chosen in advance (around the ~20 % base
 rate of wild days), all reported; no "best" threshold is picked from the
@@ -113,7 +114,9 @@ risk-free 0), active days, round trips, fees paid (% of start), share of
 winning active days, longest losing streak (active days).
 
 Comparisons per coin and pooled over the four coins:
-`grid_vol3_30 − grid_always` and `grid_random_30 − grid_always`, as mean
+`grid_vol3_30 − grid_always`, `grid_random_30 − grid_always`,
+`grid_vol3_30 − grid_random_30`, and the same three for the `grid_keep_*`
+variants, as mean
 daily return difference in basis points with a 95 % interval
 (weekly-block bootstrap, 1,000 resamples, seed 0), with a verdict line in
 the words of the ML reports ("better / worse / not distinguishable").

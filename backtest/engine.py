@@ -14,7 +14,11 @@ from backtest.grid import levels, path, run_day, step_too_small
 START = 1000.0
 SLIPPAGE = 0.0005
 THRESHOLDS = {"grid_vol3_25": 0.25, "grid_vol3_30": 0.30, "grid_vol3_35": 0.35}
-STRATEGIES = ("cash", "hold", "grid_always", *THRESHOLDS, "grid_random_30")
+# "keep" variants pause by cancelling the grid's orders and keeping the coin
+# (no exit trade); the others leave the market in USDT on a paused day
+KEEP = {f"grid_keep_{n.removeprefix('grid_')}": n
+        for n in (*THRESHOLDS, "grid_random_30")}
+STRATEGIES = ("cash", "hold", "grid_always", *THRESHOLDS, "grid_random_30", *KEEP)
 _DAY = pd.Timedelta(days=1)
 
 
@@ -63,7 +67,9 @@ def run_strategy(data: CoinData, name: str, fee: float,
     by_day = {d: g for d, g in data.minutes.groupby(data.minutes.index.floor("1D"))}
     tradable = _tradable(data, cal, by_day)
     p_wild = data.days["p_wild"]
-    paused = _random_pauses(tradable, p_wild) if name == "grid_random_30" else set()
+    keep = name in KEEP
+    rule = KEEP.get(name, name)          # the pause rule a keep variant follows
+    paused = _random_pauses(tradable, p_wild) if rule == "grid_random_30" else set()
 
     cash, coin, fees, trips = START, 0.0, 0.0, 0
     last_price = None
@@ -80,10 +86,10 @@ def run_strategy(data: CoinData, name: str, fee: float,
                 cash = 0.0
             run = coin > 0
         elif name != "cash" and tradable[day]:
-            if name == "grid_always":
+            if rule == "grid_always":
                 run = True
-            elif name in THRESHOLDS:
-                run = p_wild[day] < THRESHOLDS[name]
+            elif rule in THRESHOLDS:
+                run = p_wild[day] < THRESHOLDS[rule]
             else:                                   # grid_random_30
                 run = day not in paused
         if name.startswith("grid") and run:
@@ -96,7 +102,7 @@ def run_strategy(data: CoinData, name: str, fee: float,
                 cash, coin = r.cash, r.coin
                 fees += r.fees
                 trips += r.round_trips
-            elif coin > 0 and p_open is not None:   # WAIT: leave the market
+            elif coin > 0 and p_open is not None and not keep:   # WAIT: leave the market
                 price = p_open * (1 - slippage)
                 cash += coin * price * (1 - fee)
                 fees += coin * price * fee

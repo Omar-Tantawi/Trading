@@ -255,6 +255,9 @@ grid (10 grids over +/-3 usual 24h moves, rebuilt every day at 00:00 UTC)
 and compares: **cash**, **hold**, the grid running **every day**, the grid
 **pausing (WAIT)** on days the `vol3` model gave P(wild) of 25/30/35 % or
 more, and the grid pausing on **random** days as often as the 30 % rule.
+Each pause rule comes twice: the plain version sells the coin on a paused
+day, the `grid_keep_*` version just cancels the grid's orders and keeps the
+coin.
 It uses the stored walk-forward `vol3` 24h predictions (so first run
 `tb ml evaluate --target vol3`) and therefore never the holdout.
 

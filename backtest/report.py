@@ -6,7 +6,10 @@ from backtest.grid import N_GRIDS, RANGE_K
 from backtest.metrics import diff_ci, summary
 
 COMPARISONS = (("grid_vol3_30", "grid_always"), ("grid_random_30", "grid_always"),
-               ("grid_vol3_30", "grid_random_30"))
+               ("grid_vol3_30", "grid_random_30"),
+               ("grid_keep_vol3_30", "grid_always"),
+               ("grid_keep_random_30", "grid_always"),
+               ("grid_keep_vol3_30", "grid_keep_random_30"))
 
 
 def daily_returns(r: StrategyResult) -> pd.Series:
@@ -35,13 +38,13 @@ def _pooled(coins: dict[str, dict[str, StrategyResult]], name: str) -> StrategyR
 
 
 def _table(results: dict[str, StrategyResult]) -> list[str]:
-    lines = [f"  {'strategy':<16}{'total':>9}{'annual':>9}{'max DD':>9}{'Sharpe':>8}"
+    lines = [f"  {'strategy':<20}{'total':>9}{'annual':>9}{'max DD':>9}{'Sharpe':>8}"
              f"{'Sortino':>8}{'active':>8}{'trips':>8}{'fees':>8}{'win':>7}{'streak':>7}"]
     for name in STRATEGIES:
         r = results[name]
         s = summary(r.equity, r.active, r.round_trips, r.fees, START)
         lines.append(
-            f"  {name:<16}{s['total_return']:>+9.1%}{s['annual_return']:>+9.1%}"
+            f"  {name:<20}{s['total_return']:>+9.1%}{s['annual_return']:>+9.1%}"
             f"{s['max_drawdown']:>+9.1%}{s['sharpe']:>8.2f}{s['sortino']:>8.2f}"
             f"{s['active_days']:>8}{s['round_trips']:>8}{s['fees_pct']:>8.1%}"
             f"{s['win_share']:>7.0%}{s['longest_losing_streak']:>7}")
@@ -53,7 +56,9 @@ def render(run_id: int, fee: float, slippage: float,
     lines = [f"Spot grid backtest: run {run_id} (vol3 forecasts, next 24h), "
              f"fee {fee:.2%} per fill, slippage {slippage:.2%} on market orders",
              f"Grid: {N_GRIDS} grids over +/-{RANGE_K:g} usual 24h moves, rebuilt daily "
-             "at 00:00 UTC; start 1,000 USDT per coin. WAIT days hold USDT.", ""]
+             "at 00:00 UTC; start 1,000 USDT per coin. WAIT days: grid_vol3/random "
+             "hold USDT (coin sold at the open); grid_keep_* cancel the orders and "
+             "keep the coin.", ""]
     for symbol, results in coins.items():
         days = results["cash"].equity.index
         if not len(days):
