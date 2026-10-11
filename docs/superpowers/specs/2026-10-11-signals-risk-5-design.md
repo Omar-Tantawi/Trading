@@ -56,6 +56,8 @@ For each configured coin, at the newest closed 1h bar (`t`, closing at
    - no saved `vol3` `xgb_v1` 24 h model, or `ArtifactMismatch` →
      "no forecast model (run `tb ml train --target vol3`)"
    - `atr_pct` NULL → "volatility measure missing"
+   - grid step ≤ two fees at the user's fee rate → "grid step 0.12 % cannot
+     pay two fees (0.15 %)" (the backtest did not run the grid on such days)
 2. **Forecast**: P(wild) = the `vol3` `xgb_v1` 24 h model's probability of
    "wild" for the bar `t` (as `tb predict`). If P(wild) ≥ the user's
    `wild_threshold` → WAIT, reason "wild day expected (P(wild) 38 % ≥ 25 %)".
@@ -64,9 +66,7 @@ For each configured coin, at the newest closed 1h bar (`t`, closing at
 Also shown, whatever the status:
 
 - **Suggested range** from the backtest's grid: lower/upper
-  `close · (1 ∓ 3 · atr_pct · √24)`, 10 grids, the step in % and in price,
-  and the step compared with two fees at the user's fee rate (a step that
-  cannot pay two fees is flagged).
+  `close · (1 ∓ 3 · atr_pct · √24)`, 10 grids, the step in % and in price.
 - **Capital limit per coin**: `capital_usdt × max_coin_share` (if capital
   is set), else just the share.
 - **Profile note**: `defensive` → "in the backtest, WAIT days were spent in
