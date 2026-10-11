@@ -26,7 +26,9 @@ def _data(days=20, seed=0, drop_day=None, p_wild=None):
 
 def test_strategy_names():
     assert STRATEGIES == ("cash", "hold", "grid_always", "grid_vol3_25",
-                          "grid_vol3_30", "grid_vol3_35", "grid_random_30")
+                          "grid_vol3_30", "grid_vol3_35", "grid_random_30",
+                          "grid_keep_vol3_25", "grid_keep_vol3_30",
+                          "grid_keep_vol3_35", "grid_keep_random_30")
 
 
 def test_cash_stays_flat():
@@ -88,3 +90,22 @@ def test_day_with_grid_step_below_fees_is_not_traded():
     data.days["atr_pct"] = 0.00005          # step far below 2 x fee
     r = run_strategy(data, "grid_always", FEE, SLIP)
     assert not r.active.any() and (r.equity == START).all()
+
+
+def test_keep_pause_holds_the_coin_without_costs():
+    data = _data(p_wild=np.array([0.1] * 5 + [0.9] * 15))
+    keep = run_strategy(data, "grid_keep_vol3_30", FEE, SLIP)
+    exit_ = run_strategy(data, "grid_vol3_30", FEE, SLIP)
+    assert keep.active.iloc[:5].all() and not keep.active.iloc[5:].any()
+    # same first five days; afterwards the kept coin moves with the price
+    pd.testing.assert_series_equal(keep.equity.iloc[:5], exit_.equity.iloc[:5],
+                                   check_names=False)
+    assert keep.equity.iloc[6:].nunique() > 1
+    assert keep.fees < exit_.fees
+
+
+def test_keep_random_pauses_the_same_days_as_random():
+    data = _data(days=60)
+    a = run_strategy(data, "grid_random_30", FEE, SLIP)
+    b = run_strategy(data, "grid_keep_random_30", FEE, SLIP)
+    assert (a.active == b.active).all()
