@@ -20,7 +20,7 @@ CHROMIUM = os.environ.get("CHROMIUM_PATH", "/opt/pw-browsers/chromium-1194/chrom
 
 
 @pytest.fixture
-def server(db_conn, migrated_db, monkeypatch):
+def server(db_conn, migrated_db, monkeypatch, tmp_path):
     import uvicorn
 
     from dashboard.app import create_app
@@ -34,7 +34,8 @@ def server(db_conn, migrated_db, monkeypatch):
     from signals.settings import RiskSettings
     from signals.store import save_signal
     for symbol in ("BTCUSDT", "ETHUSDT"):
-        save_signal(db_conn, evaluate(collect(db_conn, symbol, False), RiskSettings()))
+        save_signal(db_conn, evaluate(collect(db_conn, symbol, False, root=tmp_path),
+                                      RiskSettings()))
     srv = uvicorn.Server(uvicorn.Config(create_app(lambda: real_connect(migrated_db)),
                                         host="127.0.0.1", port=PORT, log_level="warning"))
     thread = threading.Thread(target=srv.run, daemon=True)
@@ -87,6 +88,9 @@ def test_every_tab_renders_without_errors(server):
         assert "no market data" in text and "WAIT" in text and "STALE" in text
         assert "profile defensive" in page.inner_text("#signals-settings")
         assert "spent in USDT" in page.inner_text("#signals-profile")
+        import re
+        assert not re.search(r"\b(buy|sell|long|short|enter|exit)\b",
+                             page.inner_text("#signals"), re.IGNORECASE)
         assert page.evaluate("document.documentElement.scrollWidth") <= 700
 
         page.click("button[data-tab=health]")

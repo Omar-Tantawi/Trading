@@ -102,5 +102,5 @@ def test_signals_empty_then_newest_per_coin(client, db_conn):
     assert len(d["signals"]) == 1
     g = d["signals"][0]
     assert g["status"] == "WAIT" and g["p_wild"] == 0.4 and g["capital_limit"] == 250.0
-    assert g["reasons"] == ["wild day expected (P(wild) 40% >= 25%)"]
+    assert g["reasons"] == ["wild day expected (P(wild) 40.0% >= 25%)"]
     assert d["settings"]["profile"] == "return" and "kept the coin" in d["profile_note"]

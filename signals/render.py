@@ -2,8 +2,14 @@
 from datetime import datetime, timedelta
 
 from features.summary import _age
-from signals.engine import Signal
+from signals.engine import Signal, _pct, _pct_down
 from signals.settings import RiskSettings
+
+def price(v: float) -> str:
+    """Enough decimals for coins priced well under 1 USDT."""
+    digits = 2 if abs(v) >= 10 else 4 if abs(v) >= 0.1 else 6
+    return f"{v:,.{digits}f}"
+
 
 STATUS_WORDS = {"WAIT": "WAIT", "NORMAL": "GRID CONDITIONS NORMAL"}
 
@@ -43,12 +49,15 @@ def _coin(sig: Signal) -> list[str]:
         closed = sig.bar_open_time + timedelta(hours=1)
         ago = f", {_age(sig.age)}" if sig.age is not None else ""
         lines.append(f"  from the 1h bar that closed {closed:%Y-%m-%d %H:%M} UTC "
-                     f"(close {sig.close:,.2f}){ago}")
+                     f"(close {price(sig.close)}){ago}")
     if sig.p_wild is not None:
-        lines.append(f"  P(wild) next 24h: {sig.p_wild:.0%} (vol3 xgb_v1)")
+        thr = _pct(sig.settings["wild_threshold"])
+        lines.append(f"  P(wild) next 24h: {_pct_down(sig.p_wild)} "
+                     f"(WAIT at {thr} or more; vol3 xgb_v1)")
     if sig.range_low is not None:
-        lines.append(f"  suggested range: {sig.range_low:,.2f} to {sig.range_high:,.2f}, "
-                     f"{sig.n_grids} grids, step {sig.step_price:,.2f} "
+        lines.append(f"  suggested range: {price(sig.range_low)} to "
+                     f"{price(sig.range_high)}, {sig.n_grids} grids, step "
+                     f"{price(sig.step_price)} "
                      f"({sig.step_pct:.2%} at the top)")
     lines.append("  " + _capital_line(sig))
     lines += [f"  note: {n}" for n in sig.notes]
@@ -57,7 +66,7 @@ def _coin(sig: Signal) -> list[str]:
 
 def render(signals: list[Signal], s: RiskSettings, now: datetime) -> str:
     lines = [f"Grid conditions at {now:%Y-%m-%d %H:%M} UTC "
-             f"(profile {s.profile}, WAIT when P(wild) >= {s.wild_threshold:.0%}, "
+             f"(profile {s.profile}, WAIT when P(wild) >= {_pct(s.wild_threshold)}, "
              f"fee {s.fee:.3%})", ""]
     for sig in signals:
         lines += _coin(sig) + [""]

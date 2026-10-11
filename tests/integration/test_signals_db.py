@@ -85,6 +85,12 @@ def test_collect_with_trained_model_and_other_symbol(db_conn, cli, tmp_path):
     assert r.exit_code == 0, r.output
     x = collect(db_conn, "BTCUSDT", quality_fail=False, root=tmp_path / "models", now=NOW)
     assert x.model_problem is None and 0 <= x.p_wild <= 1
+    from ml.predict import prediction_state
+    state = prediction_state(db_conn, "BTCUSDT", root=tmp_path / "models", now=NOW)
+    same = [p for p in state.predictions
+            if (p.target, p.model, p.horizon) == ("vol3", "xgb_v1", 24)]
+    assert x.p_wild == pytest.approx(same[0].probs[2])
+    assert same[0].classes[2] == "wild"
     eth = collect(db_conn, "ETHUSDT", quality_fail=False, root=tmp_path / "models", now=NOW)
     assert eth.p_wild is None and "not among the training symbols" in eth.model_problem
 
@@ -174,3 +180,44 @@ def test_risk_set_rejects_bad_values(db_conn, cli, args):
     out = cli.invoke(app, ["risk", "set", *args])
     assert out.exit_code == 1, out.output
     assert load_settings(db_conn) == RiskSettings()
+
+
+def test_one_coin_error_does_not_stop_the_others(db_conn, cli, monkeypatch):
+    import signals.collect
+    monkeypatch.setenv("SYMBOLS", "BTCUSDT,ETHUSDT,SOLUSDT")
+    get_settings.cache_clear()
+    real = signals.collect.collect
+
+    def flaky(conn, symbol, *a, **k):
+        if symbol == "ETHUSDT":
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1/0")          # leaves the transaction aborted
+        return real(conn, symbol, *a, **k)
+    monkeypatch.setattr(signals.collect, "collect", flaky)
+    out = cli.invoke(app, ["signals"])
+    assert out.exit_code == 1, out.output
+    assert "ETHUSDT  WAIT" in out.output and "could not evaluate:" in out.output
+    assert "SOLUSDT  WAIT" in out.output and "no market data" in out.output
+    assert [r["symbol"] for r in latest_signals(db_conn)] == ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+
+
+def test_quality_gate_error_is_not_reported_as_passed(db_conn, cli, monkeypatch):
+    _insert(db_conn, "BTCUSDT", range(0, 5 * DAY_MINUTES))
+    build_symbol(db_conn, "BTCUSDT", FEATURE_TIMEFRAMES)
+
+    def boom(*a, **k):
+        raise RuntimeError("quality check broke")
+    monkeypatch.setattr("data.cli.build_symbol", boom)
+    out = cli.invoke(app, ["signals"])
+    assert out.exit_code == 1, out.output
+    assert "feature build failed (error: quality check broke)" in out.output
+    assert latest_signals(db_conn)[0]["status"] == "WAIT"
+
+
+def test_database_refuses_out_of_range_settings(db_conn):
+    import psycopg
+    with pytest.raises(psycopg.errors.CheckViolation):
+        with db_conn.cursor() as cur:
+            cur.execute("INSERT INTO risk_settings (profile, wild_threshold, "
+                        "max_coin_share, fee) VALUES ('defensive', 0.25, 0.25, 0.5)")
+    db_conn.rollback()

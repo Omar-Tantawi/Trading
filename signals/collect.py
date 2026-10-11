@@ -7,9 +7,11 @@ from data.storage.repository import last_candle_time
 from ml.artifacts import MODELS_DIR, ArtifactMismatch, load_model
 from ml.dataset import encode, symbol_features
 from ml.predict import _recent, check_symbol, predict_rows
+from ml.targets import TARGETS
 from signals.engine import Inputs
 
-MODEL, HORIZON, TARGET, WILD = "xgb_v1", 24, "vol3", 2
+MODEL, HORIZON, TARGET = "xgb_v1", 24, "vol3"
+WILD = TARGETS[TARGET].classes.index("wild")
 
 
 def _p_wild(sd, symbol: str, root: Path) -> tuple[float | None, str | None]:
@@ -25,14 +27,15 @@ def _p_wild(sd, symbol: str, root: Path) -> tuple[float | None, str | None]:
 
 
 def collect(conn, symbol: str, quality_fail: bool | None,
-            root: Path = MODELS_DIR, now: datetime | None = None) -> Inputs:
+            root: Path = MODELS_DIR, now: datetime | None = None,
+            build_problem: str | None = None) -> Inputs:
     empty = dict(bar_open_time=None, age=None, close=None, atr_pct=None,
                  p_wild=None, model_problem=None)
     if last_candle_time(conn, symbol) is None:
-        return Inputs(symbol, False, quality_fail, **empty)
+        return Inputs(symbol, False, quality_fail, **empty, build_problem=build_problem)
     sd, closes = _recent(conn, symbol)
     if sd.f1h.empty:
-        return Inputs(symbol, True, quality_fail, **empty)
+        return Inputs(symbol, True, quality_fail, **empty, build_problem=build_problem)
     open_time = sd.f1h.index[-1]
     atr = sd.f1h["atr_pct"].iloc[-1]
     atr = None if atr != atr else float(atr)          # NaN -> None
@@ -44,4 +47,4 @@ def collect(conn, symbol: str, quality_fail: bool | None,
                   bar_open_time=open_time.to_pydatetime(),
                   age=now - (open_time.to_pydatetime() + timedelta(hours=1)),
                   close=float(closes.loc[open_time]), atr_pct=atr,
-                  p_wild=p_wild, model_problem=problem)
+                  p_wild=p_wild, model_problem=problem, build_problem=build_problem)

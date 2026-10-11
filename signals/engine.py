@@ -27,6 +27,7 @@ class Inputs:
     atr_pct: float | None
     p_wild: float | None
     model_problem: str | None         # None when the vol3 24h model loaded
+    build_problem: str | None = None  # the feature build raised or skipped a timeframe
 
 
 @dataclass
@@ -52,7 +53,14 @@ class Signal:
 
 
 def _pct(v: float) -> str:
-    return f"{v:.0%}"
+    """A threshold, e.g. 25% or 30.5%."""
+    return f"{round(v * 100, 1):g}%"
+
+
+def _pct_down(v: float) -> str:
+    """A probability rounded down to 0.1 %, so 0.2496 shows as 24.9% and never
+    seems to equal a 25% threshold it is below."""
+    return f"{math.floor(v * 1000 + 1e-9) / 10:.1f}%"
 
 
 def _missing(v) -> bool:
@@ -64,9 +72,12 @@ def evaluate(x: Inputs, s: RiskSettings) -> Signal:
     notes: list[str] = []
     if not x.has_data:
         reasons.append("no market data")
+    if x.build_problem is not None:
+        reasons.append(f"feature build failed ({x.build_problem}); data quality "
+                       "not checked and features may be out of date")
     if x.quality_fail:
         reasons.append("data quality FAIL")
-    elif x.quality_fail is None:
+    elif x.quality_fail is None and x.build_problem is None:
         notes.append("data quality not checked (--no-build)")
     if x.has_data and x.bar_open_time is None:
         reasons.append("no 1h features from the last 3 days (run `tb features build`)")
@@ -93,12 +104,21 @@ def evaluate(x: Inputs, s: RiskSettings) -> Signal:
         sig.capital_limit = s.capital_usdt * s.max_coin_share
 
     if x.p_wild is not None and x.p_wild >= s.wild_threshold:
-        reasons.append(f"wild day expected (P(wild) {_pct(x.p_wild)} >= "
+        reasons.append(f"wild day expected (P(wild) {_pct_down(x.p_wild)} >= "
                        f"{_pct(s.wild_threshold)})")
     if not reasons and x.p_wild is None:
         reasons.append("no forecast available")
     if reasons:
         sig.status = "WAIT"
     else:
-        reasons.append(f"P(wild) {_pct(x.p_wild)} < {_pct(s.wild_threshold)}")
+        reasons.append(f"P(wild) {_pct_down(x.p_wild)} < {_pct(s.wild_threshold)}")
     return sig
+
+
+def error_signal(symbol: str, message: str, s: RiskSettings) -> Signal:
+    """WAIT for a coin whose inputs could not be read at all."""
+    return Signal(symbol=symbol, status="WAIT", reasons=[f"could not evaluate: {message}"],
+                  p_wild=None, bar_open_time=None, age=None, close=None,
+                  capital_limit=None if s.capital_usdt is None
+                  else s.capital_usdt * s.max_coin_share,
+                  settings=s.to_dict())

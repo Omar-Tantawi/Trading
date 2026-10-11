@@ -240,10 +240,11 @@ def _result_line(r: BuildResult) -> str:
 
 
 def _build_symbols(conn, targets: list[str], timeframes: tuple[str, ...],
-                   rebuild: bool, quality_failed: set[str] | None = None) -> bool:
+                   rebuild: bool, problems: dict[str, str] | None = None) -> bool:
     """Build each symbol, print one line per (symbol, timeframe), and return
-    True if anything was skipped or failed. Symbols skipped for a 1m quality
-    FAIL are added to `quality_failed` when it is given.
+    True if anything was skipped or failed. When `problems` is given, each
+    symbol that failed gets its first problem there ("data quality FAIL",
+    "error: ..." when the build raised, or "<timeframe>: <reason>").
 
     `build_symbol` isolates the timeframes. This also isolates the symbols,
     so an error in the quality gate itself is reported and the rest go on.
@@ -264,12 +265,16 @@ def _build_symbols(conn, targets: list[str], timeframes: tuple[str, ...],
             console.print(f"[red]{s}: feature build failed: "
                           f"{escape(str(exc))}[/red]", soft_wrap=True)
             failed = True
+            if problems is not None:
+                problems.setdefault(s, f"error: {exc}")
             continue
         for r in results:
             console.print(_result_line(r), soft_wrap=True)
             failed = failed or r.skipped_reason is not None
-            if quality_failed is not None and r.skipped_reason == "data quality FAIL":
-                quality_failed.add(s)
+            if problems is not None and r.skipped_reason is not None:
+                problems.setdefault(s, r.skipped_reason if r.skipped_reason ==
+                                    "data quality FAIL" else
+                                    f"{r.timeframe}: {r.skipped_reason}")
     return failed
 
 
@@ -614,30 +619,56 @@ def signals_cmd(
         False, "--no-build", help="Use the stored features without building"),
 ):
     """Grid conditions per coin: WAIT or normal, with every reason (not advice)."""
-    from signals.collect import collect
-    from signals.engine import evaluate
+    from signals import collect as signals_collect
+    from signals.engine import error_signal, evaluate
     from signals.render import render as render_signals
     from signals.settings import load_settings
     from signals.store import save_signal
 
     _setup_logging()
     symbols = get_settings().symbols
-    failed, quality_failed, sigs = False, set(), []
+    failed, problems, sigs = False, {}, []
     with connect() as conn:
         settings = load_settings(conn)
         for s in symbols:
-            if not no_build and last_candle_time(conn, s) is not None:
-                failed = _build_symbols(conn, [s], FEATURE_TIMEFRAMES, False,
-                                        quality_failed) or failed
-            quality = None if no_build else s in quality_failed
-            sig = evaluate(collect(conn, s, quality), settings)
-            save_signal(conn, sig)
+            # one coin's error must not stop the others (as _build_symbols)
+            try:
+                if not no_build and last_candle_time(conn, s) is not None:
+                    failed = _build_symbols(conn, [s], FEATURE_TIMEFRAMES, False,
+                                            problems) or failed
+                problem = problems.get(s)
+                if no_build or (problem and problem.startswith("error: ")):
+                    quality = None             # the quality gate did not finish
+                else:
+                    quality = problem == "data quality FAIL"
+                build_problem = None if problem in (None, "data quality FAIL") else problem
+                sig = evaluate(signals_collect.collect(conn, s, quality,
+                                                       build_problem=build_problem),
+                               settings)
+            except Exception as exc:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass  # a broken connection must not mask the original error
+                logging.getLogger(__name__).error("%s: signal failed: %s", s, exc)
+                failed = True
+                sig = error_signal(s, str(exc), settings)
+            try:
+                save_signal(conn, sig)
+            except Exception as exc:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                console.print(f"{s}: could not store the signal: {exc}",
+                              markup=False, soft_wrap=True)
+                failed = True
             sigs.append(sig)
     console.print(render_signals(sigs, settings, datetime.now(timezone.utc)),
                   markup=False, highlight=False, soft_wrap=True)
     if failed:
-        console.print("[red]a feature build failed or was skipped; see the lines "
-                      "above[/red]")
+        console.print("[red]a feature build or a coin's signal failed or was "
+                      "skipped; see the lines above[/red]")
         raise typer.Exit(code=1)
 
 

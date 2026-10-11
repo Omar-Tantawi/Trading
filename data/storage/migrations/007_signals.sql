@@ -3,10 +3,10 @@
 CREATE TABLE IF NOT EXISTS risk_settings (
     id             smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
     profile        text NOT NULL CHECK (profile IN ('defensive', 'return')),
-    wild_threshold double precision NOT NULL,
-    capital_usdt   double precision,
-    max_coin_share double precision NOT NULL,
-    fee            double precision NOT NULL,
+    wild_threshold double precision NOT NULL CHECK (wild_threshold BETWEEN 0.05 AND 0.95),
+    capital_usdt   double precision CHECK (capital_usdt >= 0),
+    max_coin_share double precision NOT NULL CHECK (max_coin_share BETWEEN 0.01 AND 1),
+    fee            double precision NOT NULL CHECK (fee BETWEEN 0 AND 0.01),
     updated_at     timestamptz NOT NULL DEFAULT now()
 );
 

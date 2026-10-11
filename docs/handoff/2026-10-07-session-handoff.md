@@ -336,6 +336,16 @@ user: option A, a daily grid-conditions report per coin with risk settings.
 - Rulings: with `--no-build` the quality check does not run, and the
   signal says so instead of claiming PASS. Loss limits deferred to
   sub-project 6 (they need real bot results).
+- Final review (fresh reviewer, 2026-10-11): no Critical. Fixed: one
+  coin's error no longer stops `tb signals` (that coin is WAIT "could not
+  evaluate", the rest go on, exit 1); a feature build that raised is WAIT
+  "feature build failed …" instead of counting as quality PASS; P(wild) is
+  shown rounded down to 0.1 % so it never seems to equal a threshold it is
+  below; prices keep decimals for coins under 1 USDT; the threshold is on
+  each coin's P(wild) line; DB range checks on the settings; the dashboard's
+  "checked" time is converted to UTC; tests compare P(wild) with `tb
+  predict`'s. Deferred minor: the model is loaded once per coin (speed
+  only). Tests: 333 unit + 158 db pass (cloud).
 - Not yet run on the user's PC (needs `tb db upgrade` for migration 007,
   and `tb ml train --target vol3` if the vol3 models are not saved).
 
