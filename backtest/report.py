@@ -5,7 +5,8 @@ from backtest.engine import START, STRATEGIES, StrategyResult
 from backtest.grid import N_GRIDS, RANGE_K
 from backtest.metrics import diff_ci, summary
 
-COMPARISONS = (("grid_vol3_30", "grid_always"), ("grid_random_30", "grid_always"))
+COMPARISONS = (("grid_vol3_30", "grid_always"), ("grid_random_30", "grid_always"),
+               ("grid_vol3_30", "grid_random_30"))
 
 
 def daily_returns(r: StrategyResult) -> pd.Series:

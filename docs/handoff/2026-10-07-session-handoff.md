@@ -275,7 +275,27 @@ bots are spot grids.
   pause day is outside win share/streak; touch fills are slightly
   optimistic; equal-quote sizing and daily re-centring differ from
   Binance's own bot (documented in the spec).
-- **Not yet run on real data.**
+- **First real-data run (2026-10-11, run 10, fee 0.1 %).** 2020-01 to
+  2025-09 (SOL from 2020-08). All coins, equal weight:
+
+  | Strategy | Total | Annual | Max DD | Sharpe | Fees (% of start) |
+  |---|---|---|---|---|---|
+  | hold | +8,656 % | +117.6 % | −81.2 % | 1.42 | 0.1 % |
+  | grid_always | +287 % | +26.5 % | −53.1 % | 0.86 | 122 % |
+  | grid_vol3_25 | +229 % | +23.0 % | −38.0 % | 0.92 | 120 % |
+  | grid_vol3_30 | +187 % | +20.1 % | −47.6 % | 0.77 | 107 % |
+  | grid_vol3_35 | +171 % | +18.9 % | −48.0 % | 0.71 | 101 % |
+  | grid_random_30 | +49 % | +7.2 % | −51.7 % | 0.39 | 100 % |
+
+  vol3_30 vs always: −1.8 bp/day (CI −4.5 … +0.7), not distinguishable.
+  random_30 vs always: −5.2 bp/day (CI −7.7 … −2.7), lower.
+  Reading: daily grids made money on every coin but far less than holding
+  through the 2020–25 bull market, with fees ≈ the whole starting capital.
+  Pausing costs return (exit + re-entry costs, missed grid days); pausing on
+  forecast-wild days loses much less than pausing at random (the forecast
+  picks days), but does not beat running every day. vol3_25 had the lowest
+  drawdown and the best Sharpe, without statistical proof. Added after the
+  run: a direct `grid_vol3_30 vs grid_random_30` comparison line.
 
 ## 6. Next steps
 

@@ -14,6 +14,7 @@ def test_report_rows_verdicts_and_no_advice():
     for name in STRATEGIES:
         assert f"  {name} " in text
     assert text.count("grid_vol3_30 vs grid_always:") == 3       # 2 coins + pooled
+    assert text.count("grid_vol3_30 vs grid_random_30:") == 3
     assert "All coins" in text and "Not advice." in text
     assert not ADVICE.search(text)
 
