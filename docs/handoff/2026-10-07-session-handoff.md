@@ -378,10 +378,11 @@ bots are spot grids.
    the full-exit vol3_25 still has the smallest drawdown (−38 %). The
    2020–25 bull market favours anything that holds more coin; a bear
    period test is a natural next check.
-9. **Next:** ask the user (superpowers:brainstorming). Candidates: a
-   per-year breakdown in the grid backtest report (how strategies did in
-   the 2022 bear market; the whole period is a bull market that favours
-   holding coin); a dir2 direction backtest with fees; 2b Market Profile;
+9. Built (branch `feat/backtest-by-year`, user's choice): a per-year
+   section in the grid backtest report (return and worst drop within each
+   year, all-coins portfolio or the one `--symbol`). Not yet run on real
+   data.
+10. **Then:** ask the user (superpowers:brainstorming). Candidates: a dir2 direction backtest with fees; 2b Market Profile;
    5 signals/risk. The holdout (from 2025-10-01) is still unused; keep it
    so. Known cosmetic item: `tb predict`/`tb analyze` print INFO log lines
    from the feature build.

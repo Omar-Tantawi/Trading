@@ -55,3 +55,20 @@ def diff_ci(ret_a: pd.Series, ret_b: pd.Series, n: int = 1000,
     means = sums[pick].sum(1) / counts[pick].sum(1)
     lo, hi = np.percentile(means, [2.5, 97.5])
     return float(d.mean() * 1e4), float(lo * 1e4), float(hi * 1e4)
+
+
+def by_year(equity: pd.Series, start: float) -> dict[int, dict]:
+    """Per calendar year: return from the previous year's last equity (or
+    `start`), worst drop within the year, and the year's last day."""
+    out = {}
+    prev = start
+    for year, eq in equity.groupby(equity.index.year):
+        values = np.concatenate([[prev], eq.to_numpy(dtype=float)])
+        peak = np.maximum.accumulate(values)
+        out[int(year)] = {
+            "return": float(values[-1] / prev - 1),
+            "max_drawdown": float((values / peak - 1).min()),
+            "last_day": eq.index[-1],
+        }
+        prev = values[-1]
+    return out
