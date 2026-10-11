@@ -296,6 +296,17 @@ bots are spot grids.
   picks days), but does not beat running every day. vol3_25 had the lowest
   drawdown and the best Sharpe, without statistical proof. Added after the
   run: a direct `grid_vol3_30 vs grid_random_30` comparison line.
+- **Second run, fee 0.075 % (BNB rate), 2026-10-11.** All coins: hold
+  +8,658 % (Sharpe 1.42, DD −81 %); grid_always +335 % (+29.1 %/yr, Sharpe
+  0.92, DD −52 %, fees 98 %); grid_vol3_25 +275 % (Sharpe **1.00**, DD
+  **−38 %**); grid_vol3_30 +228 %; grid_random_30 +77 %.
+  vol3_30 vs always −1.7 bp/day (−4.4 … +0.8): not distinguishable.
+  **vol3_30 vs random_30 +3.2 bp/day (+0.5 … +5.9): higher** (pooled; per
+  coin +2.8 … +4.6, each interval spanning 0). So the forecast's timing is
+  measurably better than random pausing, but a full exit on paused days
+  still costs about what the timing saves. Caveat: the random control is
+  one draw (seed 0); the interval covers return noise, not the choice of
+  random days.
 
 ## 6. Next steps
 
