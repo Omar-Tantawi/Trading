@@ -7,7 +7,8 @@ sub-project 3 (prediction ML) was merged on 2026-10-08 (`4f59d75`);
 sub-project 3.5 (dashboard) was merged on 2026-10-08 (`d43b093`);
 sub-project 3b (vol3 / dir2 targets) was merged on 2026-10-11 (`d97c496`);
 sub-project 4 (spot grid backtest) was merged on 2026-10-11 (`6c6acf7`),
-and its keep-the-coin pauses on 2026-10-11 (`abb2416`).
+its keep-the-coin pauses on 2026-10-11 (`abb2416`) and its per-year
+report on 2026-10-11 (`9b6d2c4`).
 
 > Trust `git log` and the spec over this document if they ever disagree.
 
@@ -378,7 +379,8 @@ bots are spot grids.
    the full-exit vol3_25 still has the smallest drawdown (−38 %). The
    2020–25 bull market favours anything that holds more coin; a bear
    period test is a natural next check.
-9. Built (branch `feat/backtest-by-year`, user's choice): a per-year
+9. Done and merged 2026-10-11 (`9b6d2c4`, user's approval; merged result:
+   300 unit + 137 db + 8 leakage canaries pass): a per-year
    section in the grid backtest report (return and worst drop within each
    year, all-coins portfolio or the one `--symbol`).
    **Real data, fee 0.075 %, all coins (return / worst drop in the year):**
@@ -397,7 +399,7 @@ bots are spot grids.
    2022 (−19 % vs −45 %), at the cost of lower returns in up years. In
    2022 the forecast beat random pausing in both forms (exit −19 % vs
    random −40 %; keep −44 % vs random −50 %).
-10. **Then:** ask the user (superpowers:brainstorming). Candidates: a dir2 direction backtest with fees; 2b Market Profile;
+10. **Next:** ask the user (superpowers:brainstorming). Candidates: a dir2 direction backtest with fees; 2b Market Profile;
    5 signals/risk. The holdout (from 2025-10-01) is still unused; keep it
    so. Known cosmetic item: `tb predict`/`tb analyze` print INFO log lines
    from the feature build.
