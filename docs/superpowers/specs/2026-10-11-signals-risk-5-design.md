@@ -49,7 +49,8 @@ For each configured coin, at the newest closed 1h bar (`t`, closing at
 1. **Gates**, in order; each failing gate adds a reason and forces WAIT:
    - no 1m candles stored → "no market data"
    - the incremental feature build was skipped for 1m quality FAIL →
-     "data quality FAIL"
+     "data quality FAIL" (with `--no-build` the check does not run; the
+     signal says "data quality not checked (--no-build)" instead)
    - newest 1h bar older than 2 h 5 min (the `tb predict` / `tb analyze`
      rule) → "data STALE (… old)"
    - no saved `vol3` `xgb_v1` 24 h model, or `ArtifactMismatch` →
