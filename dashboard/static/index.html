@@ -13,6 +13,7 @@
   <nav>
     <button class="tab active" data-tab="chart">Chart</button>
     <button class="tab" data-tab="models">Models</button>
+    <button class="tab" data-tab="signals">Signals</button>
     <button class="tab" data-tab="health">Data health</button>
   </nav>
 </header>
@@ -43,6 +44,17 @@
       <div id="diagnosis"></div>
       <div id="run-charts" class="charts"></div>
     </div>
+  </section>
+
+  <section id="signals" class="panel">
+    <h2>Grid conditions</h2>
+    <p class="status" id="signals-settings"></p>
+    <p class="caption">The newest signal per coin, as stored by <code>tb signals</code> (run it again to refresh). WAIT means conditions unlike the days the grid ran in the backtest; the decision is yours.</p>
+    <table id="signals-table"><thead><tr><th>symbol</th><th>status</th><th>reasons</th>
+      <th>P(wild) 24h</th><th>suggested range</th><th>step (top)</th><th>capital limit</th>
+      <th>1h bar closed (UTC)</th><th>checked (UTC)</th></tr></thead>
+      <tbody></tbody></table>
+    <p class="caption" id="signals-profile"></p>
   </section>
 
   <section id="health" class="panel">

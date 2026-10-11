@@ -81,3 +81,26 @@ def test_target_shown_and_diagnose_only_for_move3(client, db_conn):
     assert client.get("/api/runs").json()[-1]["target"] == "dir2"
     r = client.get(f"/api/runs/{run_id}/diagnose")
     assert r.status_code == 409 and "move3" in r.json()["detail"]
+
+
+def test_signals_empty_then_newest_per_coin(client, db_conn):
+    from signals.engine import Inputs, evaluate
+    from signals.settings import RiskSettings, save_settings
+    from signals.store import save_signal
+
+    d = client.get("/api/signals").json()
+    assert d["signals"] == [] and d["settings"] == RiskSettings().to_dict()
+    assert "spent in USDT" in d["profile_note"]
+
+    save_settings(db_conn, RiskSettings(profile="return", capital_usdt=1000.0))
+    s = RiskSettings(profile="return", capital_usdt=1000.0)
+    t = datetime(2024, 5, 10, 22, tzinfo=timezone.utc)
+    for p in (0.1, 0.4):
+        save_signal(db_conn, evaluate(Inputs("BTCUSDT", True, False, t, None, 100.0,
+                                             0.01, p, None), s))
+    d = client.get("/api/signals").json()
+    assert len(d["signals"]) == 1
+    g = d["signals"][0]
+    assert g["status"] == "WAIT" and g["p_wild"] == 0.4 and g["capital_limit"] == 250.0
+    assert g["reasons"] == ["wild day expected (P(wild) 40% >= 25%)"]
+    assert d["settings"]["profile"] == "return" and "kept the coin" in d["profile_note"]

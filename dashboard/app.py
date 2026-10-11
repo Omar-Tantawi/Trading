@@ -23,6 +23,9 @@ from features.pipeline import FEATURE_TIMEFRAMES
 from ml import store
 from ml.diagnose import split_skill
 from ml.report import MODEL_ORDER, render_report
+from signals.render import PROFILE_NOTES
+from signals.settings import load_settings
+from signals.store import latest_signals
 
 STATIC = Path(__file__).parent / "static"
 
@@ -132,5 +135,13 @@ def create_app(connect: Callable[[], psycopg.Connection]) -> FastAPI:
                 raise HTTPException(409, "size vs direction is only for move3 runs")
             pred = store.load_predictions(conn, run_id)
         return split_skill(pred)
+
+    @app.get("/api/signals")
+    def signals():
+        with db() as conn:
+            rows = latest_signals(conn)
+            settings = load_settings(conn)
+        return {"signals": rows, "settings": settings.to_dict(),
+                "profile_note": PROFILE_NOTES[settings.profile]}
 
     return app

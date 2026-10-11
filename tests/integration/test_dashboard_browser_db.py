@@ -29,6 +29,12 @@ def server(db_conn, migrated_db, monkeypatch):
     _insert(db_conn, "BTCUSDT", range(0, 10 * DAY_MINUTES))
     build_features(db_conn, "BTCUSDT", "1h")
     run_id = _run(db_conn)
+    from signals.collect import collect
+    from signals.engine import evaluate
+    from signals.settings import RiskSettings
+    from signals.store import save_signal
+    for symbol in ("BTCUSDT", "ETHUSDT"):
+        save_signal(db_conn, evaluate(collect(db_conn, symbol, False), RiskSettings()))
     srv = uvicorn.Server(uvicorn.Config(create_app(lambda: real_connect(migrated_db)),
                                         host="127.0.0.1", port=PORT, log_level="warning"))
     thread = threading.Thread(target=srv.run, daemon=True)
@@ -74,6 +80,14 @@ def test_every_tab_renders_without_errors(server):
         page.wait_for_selector("#run-charts img")
         assert page.inner_text("#run-report").startswith(f"Run {run_id}")
         page.wait_for_function("[...document.querySelectorAll('#run-charts img')].every(i => i.complete && i.naturalWidth > 0)")
+
+        page.click("button[data-tab=signals]")
+        page.wait_for_selector("#signals-table tbody tr:has-text('ETHUSDT')")
+        text = page.inner_text("#signals-table")
+        assert "no market data" in text and "WAIT" in text and "STALE" in text
+        assert "profile defensive" in page.inner_text("#signals-settings")
+        assert "spent in USDT" in page.inner_text("#signals-profile")
+        assert page.evaluate("document.documentElement.scrollWidth") <= 700
 
         page.click("button[data-tab=health]")
         page.wait_for_selector("#health-table tbody tr")
