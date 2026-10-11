@@ -178,6 +178,8 @@ advice**: nothing here says to buy or sell, and "flat" is a normal outcome.
 .venv\Scripts\tb.exe features build
 .venv\Scripts\tb.exe ml evaluate
 .venv\Scripts\tb.exe ml evaluate --horizon 4
+.venv\Scripts\tb.exe ml evaluate --target vol3
+.venv\Scripts\tb.exe ml train --target vol3
 .venv\Scripts\tb.exe ml runs
 .venv\Scripts\tb.exe ml report 12
 .venv\Scripts\tb.exe ml diagnose 12
@@ -195,6 +197,14 @@ advice**: nothing here says to buy or sell, and "flat" is a normal outcome.
   happened in the training data (the base rate). +1.0% means 1% lower log
   loss. The 95% interval shows how sure that is; if it includes 0, the model
   has not shown it knows anything the base rate does not.
+- **Three targets (`--target`).** `move3` (the default) is the original
+  down / flat / up question. `vol3` asks how far the price will move
+  either way during the horizon: **quiet** (under half the coin's usual
+  move), **normal**, or **wild** (1.25 times the usual move or more).
+  `dir2` asks only **down or up** at the end of the horizon. Evaluate and
+  train each one separately, e.g. `tb ml evaluate --target vol3` then
+  `tb ml train --target vol3`; `tb predict` then shows every target whose
+  models are saved, and says which ones are missing.
 - **`tb ml diagnose RUN_ID`** splits a run's skill in two: *size* (does
   the model know whether the price will move at all?) and *direction* (when
   it did move, does the model know which way?). It reads the stored

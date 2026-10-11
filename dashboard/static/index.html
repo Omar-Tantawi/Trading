@@ -33,13 +33,13 @@
 
   <section id="models" class="panel">
     <h2>Evaluation runs</h2>
-    <table id="runs"><thead><tr><th>run</th><th>kind</th><th>horizon</th>
+    <table id="runs"><thead><tr><th>run</th><th>target</th><th>kind</th><th>horizon</th>
       <th>created (UTC)</th><th>predictions</th><th>xgb skill</th></tr></thead>
       <tbody></tbody></table>
     <div id="run-detail" hidden>
       <h2 id="run-title"></h2>
       <pre id="run-report"></pre>
-      <p><button id="diagnose">Compute size vs direction (may take a minute)</button></p>
+      <p id="diagnose-row"><button id="diagnose">Compute size vs direction (may take a minute)</button></p>
       <div id="diagnosis"></div>
       <div id="run-charts" class="charts"></div>
     </div>

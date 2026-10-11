@@ -4,9 +4,11 @@ Splits the three-way forecast into two yes/no questions, scored on stored
 out-of-sample predictions against base_rate_v1 on the same rows:
 
 * size: will the price move (up or down) or stay flat?
-  P(move) = p_up + p_down.
+  P(move) = p_up + p_down  (stored as p2 + p0).
 * direction: given that it moved, which way? Scored only on rows whose
   outcome was up or down; P(up | move) = p_up / (p_up + p_down).
+
+Only for move3 runs (p0 = down, p1 = flat, p2 = up).
 
 Skill on size alone says the model knows how much the price will move
 (volatility), not where. Pure: no database, no clock.
@@ -44,8 +46,8 @@ def split_skill(pred: pd.DataFrame) -> dict:
     up = (y == UP).astype(int)
 
     def parts(rows):
-        p_move = rows["p_up"].to_numpy() + rows["p_down"].to_numpy()
-        q_up = rows["p_up"].to_numpy() / p_move
+        p_move = rows["p2"].to_numpy() + rows["p0"].to_numpy()
+        q_up = rows["p2"].to_numpy() / p_move
         return p_move, q_up
 
     b_move, b_up = parts(base)

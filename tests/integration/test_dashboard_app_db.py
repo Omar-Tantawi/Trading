@@ -29,7 +29,7 @@ def _run(conn):
     times = pd.date_range("2024-05-01", periods=4, freq="1h", tz="UTC")
     pred = pd.concat([pd.DataFrame({
         "model": m, "symbol": "BTCUSDT", "open_time": times, "fold": 0,
-        "label": [0, 1, 2, 1], "p_down": .2, "p_flat": .5, "p_up": .3})
+        "label": [0, 1, 2, 1], "p0": .2, "p1": .5, "p2": .3})
         for m in ("base_rate_v1", "xgb_v1")])
     model = {"log_loss": 1.0, "brier": .6, "accuracy": .5, "ece": .01, "skill": .01,
              "skill_lo": .0, "skill_hi": .02,
@@ -71,3 +71,13 @@ def test_runs_report_svgs_and_diagnose(client, db_conn):
     assert client.get(f"/api/runs/{run_id + 99}").status_code == 404
     d = client.get(f"/api/runs/{run_id}/diagnose").json()
     assert set(d) == {"xgb_v1"} and set(d["xgb_v1"]) == {"size", "direction"}
+
+
+def test_target_shown_and_diagnose_only_for_move3(client, db_conn):
+    run_id = _run(db_conn)
+    with db_conn.cursor() as cur:
+        cur.execute("UPDATE ml_runs SET target = 'dir2' WHERE run_id = %s", (run_id,))
+    db_conn.commit()
+    assert client.get("/api/runs").json()[-1]["target"] == "dir2"
+    r = client.get(f"/api/runs/{run_id}/diagnose")
+    assert r.status_code == 409 and "move3" in r.json()["detail"]

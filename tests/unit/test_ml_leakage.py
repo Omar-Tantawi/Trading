@@ -105,3 +105,44 @@ def test_off_by_one_4h_join_leaks(walk):
     finally:
         ds.X = ds.X.drop(columns="h4_ok")
     assert right["xgb_v1"]["skill_lo"] <= 0.0
+
+
+# ---- 3b targets -------------------------------------------------------------
+
+def _run_target(ds, target, models):
+    folds = walk_forward_folds(ds.tau, H, CFG)
+    return evaluate(ds, H, folds, models, classes=target.classes).metrics["models"]
+
+
+@pytest.mark.parametrize("name", ["vol3", "dir2"])
+def test_new_targets_find_no_skill_on_a_random_walk(walk, name):
+    from ml.targets import get_target
+    bars, data, _ = walk
+    target = get_target(name)
+    ds = build_dataset(data, H, target=target)
+    n = target.n_classes
+    m = _run_target(ds, target, lambda: [BaseRate(n), LogReg(n), XGB(n)])
+    for model in ("logreg_v2", "xgb_v1"):
+        assert m[model]["skill_lo"] <= 0.0, (name, model, m[model]["skill"])
+
+
+def test_vol3_finds_clustered_volatility():
+    from ml.targets import get_target
+    from tests.unit.ml_synthetic import clustered_vol_symbol
+    target = get_target("vol3")
+    data = {s: clustered_vol_symbol(seed, START, HOURS)
+            for seed, s in enumerate(("BTCUSDT", "ETHUSDT"))}
+    m = _run_target(build_dataset(data, H, target=target), target,
+                    lambda: [BaseRate(3), XGB(3)])
+    assert m["xgb_v1"]["skill_lo"] > 0.0
+
+
+def test_dir2_leaked_future_return_is_caught(walk):
+    from ml.targets import get_target
+    bars, data, _ = walk
+    target = get_target("dir2")
+    ds = build_dataset(data, H, target=target)
+    leak = {s: np.log(b["close"].shift(-H) / b["close"]) for s, b in bars.items()}
+    ds.X = ds.X.assign(leak=_per_row(ds, leak))
+    m = _run_target(ds, target, lambda: [BaseRate(2), XGB(2)])
+    assert m["xgb_v1"]["skill"] > 0.20

@@ -112,3 +112,32 @@ def test_logreg_early_stop_is_silent():
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         LogReg().fit(X[:2000], y[:2000], X[2000:], y[2000:])
+
+
+@pytest.mark.parametrize("n", [2, 3])
+def test_models_with_n_classes(n):
+    X, y = _random_xy()
+    y = y % n
+    for model in make_models(n):
+        assert model.n_classes == n
+        model.fit(X[:400], y[:400], X[400:500], y[400:500])
+        p = model.predict_proba(X[500:])
+        assert p.shape == (100, n) and np.allclose(p.sum(1), 1.0), model.name
+
+
+def test_two_class_missing_class_still_two_columns():
+    X, _ = _random_xy()
+    y = np.zeros(len(X), dtype=int)
+    for model in make_models(2):
+        p = model.fit(X[:400], y[:400], X[400:500], y[400:500]).predict_proba(X[500:])
+        assert p.shape == (100, 2), model.name
+
+
+def test_models_saved_before_3b_still_load():
+    import pickle
+    from ml.models import XGB
+    X, y = _random_xy()
+    m = XGB().fit(X[:400], y[:400], X[400:500], y[400:500])
+    del m.__dict__["n_classes"]          # as pickled by sub-project 3
+    old = pickle.loads(pickle.dumps(m))
+    assert old.predict_proba(X[500:]).shape == (100, 3)

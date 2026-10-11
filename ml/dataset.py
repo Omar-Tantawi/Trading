@@ -11,7 +11,6 @@ import numpy as np
 import pandas as pd
 
 from features.pipeline import FEATURE_COLUMNS, TEXT_COLUMNS
-from ml.labels import make_labels
 
 # Price levels and base-unit volumes: drawn on charts, never model inputs
 # (2a spec section 3.2).
@@ -38,6 +37,8 @@ class SymbolData:
     f1h: pd.DataFrame       # FEATURE_COLUMNS, as features.store.read_features
     f4h: pd.DataFrame
     f1d: pd.DataFrame
+    high: pd.Series | None = None   # 1h highs and lows (needed by vol3)
+    low: pd.Series | None = None
 
 
 @dataclass
@@ -98,13 +99,17 @@ def encode(frame: pd.DataFrame, symbol: str,
 
 
 def build_dataset(data: dict[str, SymbolData], horizon: int,
-                  symbols: tuple[str, ...] | None = None) -> Dataset:
-    """Labelled rows of every symbol, sorted by (tau, symbol)."""
+                  symbols: tuple[str, ...] | None = None,
+                  target=None) -> Dataset:
+    """Labelled rows of every symbol for `target` (default move3), sorted by
+    (tau, symbol)."""
+    from ml.targets import get_target
+
+    target = target or get_target("move3")
     symbols = tuple(symbols or data)
     frames = []
     for symbol, sd in data.items():
-        labels = make_labels(sd.close.reindex(sd.f1h.index), sd.f1h["atr_pct"],
-                             horizon)
+        labels = target.labels(sd, horizon)
         X = encode(symbol_features(sd), symbol, symbols)
         keep = labels.notna().to_numpy()
         X = X[keep]

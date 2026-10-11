@@ -67,3 +67,18 @@ def test_models_in_fixed_order_whatever_the_stored_order():
     text = render_report(run)
     table = [l.split()[0] for l in text.splitlines() if l.split() and l.split()[0] in NAMES]
     assert table[:6] == list(NAMES)
+
+
+def test_report_names_the_target_classes_in_order():
+    run = _run()
+    run["target"] = "dir2"
+    # jsonb returns keys sorted by length: "up" before "down"
+    run["metrics"]["class_shares"] = {"up": .52, "down": .48}
+    text = render_report(run)
+    assert "target dir2" in text
+    assert "Outcomes in the test periods: down 48%, up 52%" in text
+
+
+def test_holdout_count_says_all_targets():
+    text = render_report(_run("holdout", 1))
+    assert "Holdout evaluations for this horizon so far (all targets): 1" in text

@@ -42,22 +42,27 @@ def check_fresh(conn, symbols) -> None:
 
 def load_symbol_data(conn, symbol: str) -> SymbolData:
     cutoff = build_cutoff(conn, symbol, "1h")
-    close = load_bars(conn, symbol, "1h", None, cutoff)["close"]
+    bars = load_bars(conn, symbol, "1h", None, cutoff)
     return SymbolData(
-        close=close,
+        close=bars["close"], high=bars["high"], low=bars["low"],
         f1h=read_features(conn, symbol, "1h"),
         f4h=read_features(conn, symbol, "4h"),
         f1d=read_features(conn, symbol, "1d"),
     )
 
 
-def run_config(horizon: int, cfg: FoldConfig) -> dict:
+def run_config(horizon: int, cfg: FoldConfig, target: str = "move3") -> dict:
     """Every constant that shaped a run, JSON-serialisable."""
+    from ml.targets import VOL_QUIET, VOL_WILD, get_target
+
+    t = get_target(target)
     folds = {k: (v.isoformat() if hasattr(v, "isoformat") else v)
              for k, v in asdict(cfg).items()}
     return {
-        "horizon": horizon, "label_k": LABEL_K, "label_set": LABEL_SET,
+        "horizon": horizon, "target": t.name, "classes": list(t.classes),
+        "label_set": t.label_set, "label_k": LABEL_K,
+        "vol_quiet": VOL_QUIET, "vol_wild": VOL_WILD,
         "feature_set": FEATURE_SET, "folds": folds,
-        "models": [m.name for m in make_models()],
+        "models": [m.name for m in make_models(t.n_classes)],
         "logreg": LOGREG_PARAMS, "xgb": {**XGB_PARAMS, "rounds": XGB_ROUNDS},
     }

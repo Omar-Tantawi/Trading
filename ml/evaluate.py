@@ -14,14 +14,17 @@ import pandas as pd
 
 from ml.dataset import Dataset
 from ml.folds import Fold
-from ml.labels import CLASSES
 from ml.metrics import (
     accuracy, bootstrap_skill_ci, brier, ece, log_loss, reliability, skill,
 )
 from ml.models import Model, make_models
 
 BASE = "base_rate_v1"
-_P = ["p_down", "p_flat", "p_up"]
+MOVE3 = ("down", "flat", "up")
+
+
+def _p(n: int) -> list[str]:
+    return [f"p{i}" for i in range(n)]
 
 
 @dataclass
@@ -31,10 +34,12 @@ class EvalResult:
 
 
 def evaluate(ds: Dataset, horizon: int, folds: list[Fold],
-             model_factory: Callable[[], list[Model]] = make_models,
-             progress: Callable[[str], None] | None = None) -> EvalResult:
+             model_factory: Callable[[], list[Model]] | None = None,
+             progress: Callable[[str], None] | None = None,
+             classes: tuple[str, ...] = MOVE3) -> EvalResult:
     """`progress`, if given, receives one line per test period with the
     seconds each model took."""
+    model_factory = model_factory or (lambda: make_models(len(classes)))
     parts = []
     for i, fold in enumerate(folds, 1):
         timings = []
@@ -52,14 +57,14 @@ def evaluate(ds: Dataset, horizon: int, folds: list[Fold],
                 "open_time": ds.open_time[fold.test_idx],
                 "fold": fold.number,
                 "label": ds.y[fold.test_idx],
-                "p_down": p[:, 0], "p_flat": p[:, 1], "p_up": p[:, 2],
+                **{f"p{k}": p[:, k] for k in range(len(classes))},
             }))
         if progress:
             progress(f"  next {horizon}h: period {i}/{len(folds)} "
                      f"({fold.test_start:%Y-%m}), {len(fold.fit_idx):,} training "
                      f"rows: " + ", ".join(timings))
     pred = pd.concat(parts, ignore_index=True)
-    metrics = summarise(pred, horizon)
+    metrics = summarise(pred, horizon, classes)
     metrics["folds"] = [{
         "number": f.number,
         "test_start": f.test_start.isoformat(),
@@ -69,22 +74,24 @@ def evaluate(ds: Dataset, horizon: int, folds: list[Fold],
     return EvalResult(pred, metrics)
 
 
-def summarise(pred: pd.DataFrame, horizon: int) -> dict:
+def summarise(pred: pd.DataFrame, horizon: int,
+              classes: tuple[str, ...] = MOVE3) -> dict:
     """Pooled, per-fold and per-symbol scores of every model (spec 6)."""
+    cols = _p(len(classes))
     key = ["symbol", "open_time"]
     base = pred[pred["model"] == BASE].sort_values(key, kind="stable")
     y = base["label"].to_numpy(dtype=int)
-    p_base = base[_P].to_numpy()
+    p_base = base[cols].to_numpy()
     tau = pd.DatetimeIndex(base["open_time"]) + pd.Timedelta(hours=1)
     folds_of = base["fold"].to_numpy()
     symbols = base["symbol"].to_numpy()
     starts = {}
-    shares = np.bincount(y, minlength=3) / len(y)
+    shares = np.bincount(y, minlength=len(classes)) / len(y)
 
     models = {}
     for name in pred["model"].unique():
         rows = pred[pred["model"] == name].sort_values(key, kind="stable")
-        p = rows[_P].to_numpy()
+        p = rows[cols].to_numpy()
         ll, ll_base = log_loss(p, y), log_loss(p_base, y)
         lo, hi = ((0.0, 0.0) if name == BASE
                   else bootstrap_skill_ci(p, p_base, y, tau))
@@ -109,6 +116,6 @@ def summarise(pred: pd.DataFrame, horizon: int) -> dict:
     return {
         "horizon": horizon,
         "n_test": int(len(y)),
-        "class_shares": {c: float(v) for c, v in zip(CLASSES, shares)},
+        "class_shares": {c: float(v) for c, v in zip(classes, shares)},
         "models": models,
     }

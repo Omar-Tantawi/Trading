@@ -201,6 +201,53 @@ timeframes). Deferred minors: a 422's list `detail` would read "[object
 Object]" (cannot happen from the page); a future model not in
 `MODEL_ORDER` would show broken chart images.
 
+## 5d. Current state of sub-project 3b (volatility and direction targets)
+
+Branch `feat/targets-3b`. Spec `docs/superpowers/specs/2026-10-08-targets-3b-design.md`,
+plan `docs/superpowers/plans/2026-10-08-targets-3b.md`. Agreed with the user:
+volatility as three buckets, direction as up/down.
+
+- New targets beside `move3`: `vol3` (largest move either way during the
+  horizon vs `atr_pct·√H`: quiet < 0.5, wild ≥ 1.25) and `dir2` (sign of the
+  end-of-horizon return). `--target` on `tb ml evaluate` / `tb ml train`;
+  `tb predict` shows every target with saved models.
+- Migration `006_targets.sql`: `ml_runs.target` (default move3);
+  `ml_predictions` columns renamed `p0, p1, p2` (p2 NULL for dir2).
+- Models saved before 3b still load (move3 paths and a class default).
+- Also fixed: `tb predict` printed "ago ago" (bug since the STALE fix).
+- Canaries (synthetic): vol3 and dir2 show no skill on a random walk; vol3
+  finds clustered volatility (xgb +14 %); a leaked future return is caught
+  for dir2. Class shares on the random walk: vol3 18 / 71 / 10 %.
+- Final review (fresh reviewer): no Critical; fixed the Important one
+  (a stale or mismatched model of one target no longer stops `tb predict`;
+  it prints one line per affected target/model with the right
+  `tb ml train --target` hint) and minors M1 (move3 label_set from
+  `ml.labels`), M2 (holdout count labelled "all targets": any target's look
+  spends the holdout), M3 (one skip line per target), M7 (vol3 hint shows
+  exact prices). Deferred: vol3 can drop a row the others keep if a 1h
+  candle is missing under an existing feature row (stricter, no leak);
+  no migration-upgrade test (checked by hand by the reviewer).
+- **Before any ml command on the PC: `tb db upgrade`** (applies 006). It is
+  one-way: after it, older code that reads `p_down` no longer works on that
+  database.
+- **First real-data run (2026-10-11, user's PC; runs 8–13).** Skill vs the
+  base rate, 95 % CI, test periods 2020-01 to 2025-10:
+
+  | Target | Horizon | Classes | xgb_v1 | logreg_v2 | best rule |
+  |---|---|---|---|---|---|
+  | vol3 | 1h | quiet 32 / normal 55 / wild 14 % | **+4.5 % (+4.2 … +4.8)**, 12/12 periods > 0 | +3.4 % | rsi +0.6 % |
+  | vol3 | 4h | 29 / 55 / 16 % | **+2.6 % (+2.4 … +2.9)**, 12/12 | +1.1 % | rsi +0.3 % |
+  | vol3 | 24h | 24 / 56 / 20 % | **+3.0 % (+2.2 … +3.7)**, 12/12 | −0.6 % (2021-01 −15.9 %) | ~0 |
+  | dir2 | 1h | down 49 / up 51 % | +0.6 % (+0.6 … +0.7), acc 53.8 % | +0.4 % | macd +0.1 % |
+  | dir2 | 4h | 49 / 51 % | +0.4 % (+0.3 … +0.5), acc 53.4 % | +0.2 % | ~0 |
+  | dir2 | 24h | 48 / 52 % | +0.1 % (−0.2 … +0.3): none | −0.1 % | ~0 |
+
+  Reading: vol3 is a clear, stable volatility forecast at every horizon
+  (v1's size skill was +1.7 % / +1.2 %). dir2 shows a small direction
+  signal at 1h/4h (weak in 2021-01 and 2025-01), none at 24h; whether it
+  survives fees is for sub-project 4. Run times: vol3 44 min, dir2 22 min.
+  Holdout still unused.
+
 ## 6. Next steps
 
 1. Done: the first `tb ml evaluate` on real data (results above).
