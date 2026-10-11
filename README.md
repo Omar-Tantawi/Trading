@@ -1,4 +1,4 @@
-# AI Trading Buddy — Data, Market Features, Prediction Models and Dashboard
+# AI Trading Buddy — Data, Market Features, Prediction Models, Dashboard and Backtests
 
 Verified Binance market-data warehouse (sub-project 1), the market
 features computed from it (sub-project 2a), prediction models measured
@@ -242,6 +242,30 @@ Then open **http://127.0.0.1:8050** in your browser. Stop it with Ctrl+C.
   Lightweight Charts library, Apache-2.0, is stored in
   `dashboard/static/vendor/`). The page shows what is stored: run
   `tb backfill` and `tb features build` first for fresh charts.
+
+## Backtesting spot grid bots (sub-project 4)
+
+```bash
+.venv\Scripts\tb.exe backtest grid
+.venv\Scripts\tb.exe backtest grid --symbol BTCUSDT --fee 0.00075
+```
+
+Replays the stored 1-minute candles, day by day, with a Binance-style spot
+grid (10 grids over +/-3 usual 24h moves, rebuilt every day at 00:00 UTC)
+and compares: **cash**, **hold**, the grid running **every day**, the grid
+**pausing (WAIT)** on days the `vol3` model gave P(wild) of 25/30/35 % or
+more, and the grid pausing on **random** days as often as the 30 % rule.
+It uses the stored walk-forward `vol3` 24h predictions (so first run
+`tb ml evaluate --target vol3`) and therefore never the holdout.
+
+- Costs: 0.1 % per fill (`--fee`), 0.05 % slippage on the daily
+  re-centring and on leaving the market.
+- The report gives return, annual return, maximum drawdown, Sharpe,
+  Sortino, active days, round trips, fees, winning days and the longest
+  losing streak, and whether pausing on forecast-wild days beats running
+  every day (mean daily difference with a 95 % interval).
+- It is a simulation of the past, not advice: real fills, fees and outages
+  differ.
 
 ## Facts worth knowing
 

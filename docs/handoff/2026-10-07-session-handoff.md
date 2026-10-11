@@ -249,6 +249,23 @@ volatility as three buckets, direction as up/down.
   survives fees is for sub-project 4. Run times: vol3 44 min, dir2 22 min.
   Holdout still unused.
 
+## 5e. Current state of sub-project 4 (spot grid backtest)
+
+Branch `feat/backtest-4`. Spec `docs/superpowers/specs/2026-10-11-backtest-grid-4-design.md`,
+plan `docs/superpowers/plans/2026-10-11-backtest-grid-4.md`. Agreed with the
+user: grid bots steered by the volatility forecast (option A); the user's
+bots are spot grids.
+
+- New package `backtest/` (grid day simulation on 1m candles, strategies,
+  metrics, loader, report); command `tb backtest grid [--symbol] [--run]
+  [--fee]`. Uses the latest walk-forward vol3 h24 run's xgb_v1 P(wild) at
+  each day's 00:00 UTC; never the holdout.
+- Synthetic check (random walk, 2,100 days): grid_always ends at 989 USDT
+  without fees and 413 with fees (≈400 grid-fill fees, ≈190 daily
+  re-centring): on random prices fees decide; real data will tell whether
+  real swings pay for them. ~2.4 s per grid strategy per coin.
+- **Not yet run on real data.**
+
 ## 6. Next steps
 
 1. Done: the first `tb ml evaluate` on real data (results above).

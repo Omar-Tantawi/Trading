@@ -44,6 +44,8 @@ app.add_typer(symbols_app, name="symbols")
 app.add_typer(features_app, name="features")
 ml_app = typer.Typer(help="Prediction models (measurements, not advice)")
 app.add_typer(ml_app, name="ml")
+backtest_app = typer.Typer(help="Simulations on stored history (not advice)")
+app.add_typer(backtest_app, name="backtest")
 console = Console()
 
 # Walk-forward fold settings; a module attribute so tests can shrink them.
@@ -564,6 +566,41 @@ def dashboard(port: int = typer.Option(8050, help="Local port")):
                   markup=False)
     uvicorn.run(create_app(connect), host="127.0.0.1", port=port,
                 log_level="warning")
+
+
+@backtest_app.command("grid")
+def backtest_grid(
+    symbol: str = typer.Option(None, help="One symbol; default is all configured"),
+    run: int = typer.Option(None, "--run", help="A walk-forward vol3 run with "
+                            "horizon 24; default the newest"),
+    fee: float = typer.Option(0.001, help="Fee per fill (0.001 = 0.1%)"),
+):
+    """Spot grid bots: always on, paused on forecast-wild days, or paused at
+    random, against cash and hold."""
+    from backtest.engine import SLIPPAGE, STRATEGIES, run_strategy
+    from backtest.load import check_run, default_run, load_coin
+    from backtest.report import render
+
+    _setup_logging()
+    symbols = [symbol.upper()] if symbol else get_settings().symbols
+    with connect() as conn:
+        run_id = run if run is not None else default_run(conn)
+        if run_id is None:
+            console.print("no vol3 run with horizon 24; run "
+                          "`tb ml evaluate --target vol3` first", markup=False)
+            raise typer.Exit(code=1)
+        problem = check_run(conn, run_id)
+        if problem:
+            console.print(problem, markup=False, soft_wrap=True)
+            raise typer.Exit(code=1)
+        coins = {}
+        for s in symbols:
+            console.print(f"{s}: loading and simulating ...", markup=False)
+            data = load_coin(conn, s, run_id)
+            coins[s] = {name: run_strategy(data, name, fee, SLIPPAGE)
+                        for name in STRATEGIES}
+    console.print(render(run_id, fee, SLIPPAGE, coins), markup=False,
+                  highlight=False, soft_wrap=True)
 
 
 if __name__ == "__main__":
