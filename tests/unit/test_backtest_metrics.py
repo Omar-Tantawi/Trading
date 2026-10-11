@@ -45,3 +45,17 @@ def test_sortino_uses_all_days_for_downside():
     ret = np.array([0, -0.01, 0, 0, 1010 / 990 - 1])
     down = np.sqrt((np.minimum(ret, 0) ** 2).mean())
     assert s["sortino"] == pytest.approx(ret.mean() / down * np.sqrt(365))
+
+
+def test_by_year_returns_and_drawdowns():
+    from backtest.metrics import by_year
+    days = pd.to_datetime(["2021-06-30", "2021-12-31", "2022-03-31", "2022-12-31",
+                           "2023-01-31"], utc=True)
+    eq = pd.Series([1100, 1210, 605, 907.5, 1089.0], index=days)
+    out = by_year(eq, start=1000.0)
+    assert list(out) == [2021, 2022, 2023]
+    assert out[2021]["return"] == pytest.approx(0.21)
+    assert out[2022]["return"] == pytest.approx(907.5 / 1210 - 1)
+    assert out[2022]["max_drawdown"] == pytest.approx(-0.5)
+    assert out[2023]["return"] == pytest.approx(0.2) and out[2023]["max_drawdown"] == 0.0
+    assert out[2023]["last_day"] == pd.Timestamp("2023-01-31", tz="UTC")

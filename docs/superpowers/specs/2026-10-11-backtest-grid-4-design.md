@@ -121,6 +121,11 @@ daily return difference in basis points with a 95 % interval
 (weekly-block bootstrap, 1,000 resamples, seed 0), with a verdict line in
 the words of the ML reports ("better / worse / not distinguishable").
 
+*Added 2026-10-11 (user's choice):* a per-year section for the all-coins
+portfolio (or the single coin with `--symbol`): each calendar year's return
+and the worst drop within that year, per strategy; a partial last year is
+labelled with its end date.
+
 The report is measurement: it never contains buy, sell, long, short, enter
 or exit (test), and ends with "Past simulated results; real fills, fees and
 outages differ. Not advice."

@@ -29,3 +29,15 @@ def test_report_has_averaged_table_and_disclosures():
     avg = text.split("All coins, equal weight")[1]
     assert "  grid_always " in avg
     assert "full 1440 minutes" in text and "random pause days are drawn over the whole period" in text
+
+
+def test_report_has_per_year_tables():
+    coins = {s: {n: run_strategy(_data(days=30, seed=i), n, 0.001) for n in STRATEGIES}
+             for i, s in enumerate(("BTCUSDT", "ETHUSDT"))}
+    text = render(7, 0.001, 0.0005, coins)
+    assert "Per year, all coins (return):" in text
+    assert "Per year, all coins (worst drop within the year):" in text
+    per_year = text.split("Per year, all coins (return):")[1]
+    assert "2024 (to Jan 30)" in per_year and "  grid_keep_vol3_30 " in per_year
+    single = render(7, 0.001, 0.0005, {"BTCUSDT": coins["BTCUSDT"]})
+    assert "Per year, BTCUSDT (return):" in single

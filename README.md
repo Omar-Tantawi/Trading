@@ -266,7 +266,9 @@ It uses the stored walk-forward `vol3` 24h predictions (so first run
 - The report gives return, annual return, maximum drawdown, Sharpe,
   Sortino, active days, round trips, fees, winning days and the longest
   losing streak, and whether pausing on forecast-wild days beats running
-  every day (mean daily difference with a 95 % interval).
+  every day (mean daily difference with a 95 % interval), and finishes
+  with a per-year table (return and worst drop within each year) for the
+  all-coins portfolio, or for the one coin given with `--symbol`.
 - It is a simulation of the past, not advice: real fills, fees and outages
   differ.
 

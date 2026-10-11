@@ -378,10 +378,26 @@ bots are spot grids.
    the full-exit vol3_25 still has the smallest drawdown (−38 %). The
    2020–25 bull market favours anything that holds more coin; a bear
    period test is a natural next check.
-9. **Next:** ask the user (superpowers:brainstorming). Candidates: a
-   per-year breakdown in the grid backtest report (how strategies did in
-   the 2022 bear market; the whole period is a bull market that favours
-   holding coin); a dir2 direction backtest with fees; 2b Market Profile;
+9. Built (branch `feat/backtest-by-year`, user's choice): a per-year
+   section in the grid backtest report (return and worst drop within each
+   year, all-coins portfolio or the one `--symbol`).
+   **Real data, fee 0.075 %, all coins (return / worst drop in the year):**
+
+   | Strategy | 2020 | 2021 | **2022** | 2023 | 2024 | 2025 (to Sep 30) |
+   |---|---|---|---|---|---|---|
+   | hold | +202 / −60 | +1311 / −52 | **−74 / −75** | +202 / −29 | +103 / −31 | +30 / −43 |
+   | grid_always | +17 / −46 | +191 / −26 | **−45 / −46** | +55 / −18 | +40 / −17 | +7 / −24 |
+   | grid_vol3_25 (exit) | +15 / −38 | +126 / −15 | **−19 / −28** | +41 / −10 | +24 / −15 | +1 / −16 |
+   | grid_keep_vol3_25 | +62 / −42 | +264 / −24 | **−44 / −46** | +70 / −14 | +46 / −16 | +12 / −22 |
+   | grid_keep_random_30 | +56 / −43 | +246 / −24 | **−50 / −52** | +57 / −17 | +38 / −16 | +11 / −21 |
+
+   Reading: in the 2022 bear market the keep-pauses lost about as much as
+   always-on (not more); their lead comes from the up years. The full-exit
+   vol3_25 had the smallest worst drop in every year and lost far less in
+   2022 (−19 % vs −45 %), at the cost of lower returns in up years. In
+   2022 the forecast beat random pausing in both forms (exit −19 % vs
+   random −40 %; keep −44 % vs random −50 %).
+10. **Then:** ask the user (superpowers:brainstorming). Candidates: a dir2 direction backtest with fees; 2b Market Profile;
    5 signals/risk. The holdout (from 2025-10-01) is still unused; keep it
    so. Known cosmetic item: `tb predict`/`tb analyze` print INFO log lines
    from the feature build.

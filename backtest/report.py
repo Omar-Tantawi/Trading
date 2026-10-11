@@ -3,7 +3,7 @@ import pandas as pd
 
 from backtest.engine import START, STRATEGIES, StrategyResult
 from backtest.grid import N_GRIDS, RANGE_K
-from backtest.metrics import diff_ci, summary
+from backtest.metrics import by_year, diff_ci, summary
 
 COMPARISONS = (("grid_vol3_30", "grid_always"), ("grid_random_30", "grid_always"),
                ("grid_vol3_30", "grid_random_30"),
@@ -51,6 +51,29 @@ def _table(results: dict[str, StrategyResult]) -> list[str]:
     return lines
 
 
+def _per_year(label: str, results: dict[str, StrategyResult]) -> list[str]:
+    years = {n: by_year(results[n].equity, START) for n in STRATEGIES}
+    cols = list(years["cash"])
+    if not cols:
+        return []
+    last = years["cash"][cols[-1]]["last_day"]
+    heads = [str(y) for y in cols]
+    if (last.month, last.day) != (12, 31):
+        heads[-1] = f"{cols[-1]} (to {last:%b} {last.day})"
+    widths = [max(9, len(h) + 2) for h in heads]
+    lines = []
+    for key, title in (("return", "return"),
+                       ("max_drawdown", "worst drop within the year")):
+        lines.append(f"Per year, {label} ({title}):")
+        lines.append(f"  {'strategy':<20}" + "".join(
+            f"{h:>{w}}" for h, w in zip(heads, widths)))
+        for n in STRATEGIES:
+            lines.append(f"  {n:<20}" + "".join(
+                f"{years[n][y][key]:>+{w}.1%}" for y, w in zip(cols, widths)))
+        lines.append("")
+    return lines
+
+
 def render(run_id: int, fee: float, slippage: float,
            coins: dict[str, dict[str, StrategyResult]]) -> str:
     lines = [f"Spot grid backtest: run {run_id} (vol3 forecasts, next 24h), "
@@ -82,6 +105,10 @@ def render(run_id: int, fee: float, slippage: float,
             rb = pd.concat([daily_returns(r[b]) for r in coins.values()], axis=1).mean(axis=1)
             lines.append("  " + _verdict(a, b, *diff_ci(ra, rb)))
         lines.append("")
+        lines += _per_year("all coins", {n: _pooled(with_days, n) for n in STRATEGIES})
+    elif len(with_days) == 1:
+        symbol, results = next(iter(with_days.items()))
+        lines += _per_year(symbol, results)
     lines.append("Notes: a day is simulated only when its full 1440 minutes, its "
                  "atr_pct and its forecast are stored; grids hold USDT on other days "
                  "(the hold strategy does not). The random pause days are drawn over "
