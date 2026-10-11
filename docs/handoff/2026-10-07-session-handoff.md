@@ -359,10 +359,24 @@ bots are spot grids.
    user's approval (merged result: 296 unit + 137 db + 8 leakage canaries
    pass). Also fixed: `backtest` was missing from pyproject's package list
    (a test now checks every package is listed).
-8. In progress (branch `feat/backtest-keep-pause`, user's choice): the
-   better pause. `grid_keep_vol3_25/30/35` and `grid_keep_random_30` cancel
-   the grid's orders and keep the coin on paused days; three more
-   comparison lines. Not yet run on real data.
+8. Built (branch `feat/backtest-keep-pause`, user's choice): the better
+   pause. `grid_keep_vol3_25/30/35` and `grid_keep_random_30` cancel the
+   grid's orders and keep the coin on paused days.
+   **Real data, fee 0.075 %, 2026-10-11, all coins equal weight:**
+   grid_always +335 % (Sharpe 0.92, DD −52 %); grid_keep_vol3_25 +812 %
+   (Sharpe 1.27, DD −52 %); grid_keep_vol3_30 +703 % (1.19, −52 %);
+   grid_keep_random_30 +547 % (1.08, −57 %); hold +8,658 % (1.42, −81 %).
+   keep_vol3_30 vs always +3.1 bp/day (+1.6 … +4.8); keep_random_30 vs
+   always +2.0 (+0.4 … +3.9); **keep_vol3_30 vs keep_random_30 +1.1 bp/day
+   (+0.2 … +2.0), higher** (per coin +0.5 … +1.3, each spanning 0).
+   Reading: most of the keep variants' gain over always-on comes from
+   holding coin (no trading, no fees) on paused days in a rising market:
+   even random keep-pauses beat always-on. The forecast's own value is the
+   keep-vs-random gap, ≈ +1.1 bp/day (≈ 4 %/yr), significant only pooled.
+   Keep-pauses do not reduce drawdowns (SOL −74 % vs −68 % always-on);
+   the full-exit vol3_25 still has the smallest drawdown (−38 %). The
+   2020–25 bull market favours anything that holds more coin; a bear
+   period test is a natural next check.
 9. **Then:** ask the user (superpowers:brainstorming). Candidates: a better
    pause for the grid backtest (keep the coin and cancel orders on wild
    days instead of a full exit, which costs about what the forecast's
