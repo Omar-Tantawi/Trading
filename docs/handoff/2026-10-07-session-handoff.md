@@ -4,7 +4,8 @@
 sub-project 1 (now merged into `master`).
 **Branch:** `master`. Sub-project 2a was merged on 2026-10-07 (`771af81`);
 sub-project 3 (prediction ML) was merged on 2026-10-08 (`4f59d75`);
-sub-project 3.5 (dashboard) was merged on 2026-10-08 (`d43b093`).
+sub-project 3.5 (dashboard) was merged on 2026-10-08 (`d43b093`);
+sub-project 3b (vol3 / dir2 targets) was merged on 2026-10-11 (`d97c496`).
 
 > Trust `git log` and the spec over this document if they ever disagree.
 
@@ -203,7 +204,7 @@ Object]" (cannot happen from the page); a future model not in
 
 ## 5d. Current state of sub-project 3b (volatility and direction targets)
 
-Branch `feat/targets-3b`. Spec `docs/superpowers/specs/2026-10-08-targets-3b-design.md`,
+**Done and merged** (2026-10-11). Spec `docs/superpowers/specs/2026-10-08-targets-3b-design.md`,
 plan `docs/superpowers/plans/2026-10-08-targets-3b.md`. Agreed with the user:
 volatility as three buckets, direction as up/down.
 
@@ -288,10 +289,15 @@ volatility as three buckets, direction as up/down.
 5. Done 2026-10-08: 3.5 (dashboard) checked on the PC and merged into
    `master` with the user's approval (merged result: 254 unit + 127 db
    incl. the browser test + 4 leakage canaries pass).
-6. **Next:** ask the user (superpowers:brainstorming): 2b Market Profile,
-   or "3b" (separate volatility and direction targets), or 4 backtesting
-   (next in the build order). The holdout (from 2025-10-01) is still
-   unused; keep it so.
+6. Done 2026-10-11: 3b built, reviewed, run on real data (§5d), `tb ml
+   train --target vol3/dir2` and `tb predict` checked on the PC, merged
+   into `master` with the user's approval (merged result: 272 unit + 133 db
+   + 8 leakage canaries pass).
+7. **Next:** ask the user (superpowers:brainstorming): 4 backtesting (next
+   in the build order; vol3 is the signal worth testing, dir2 at 1h/4h
+   needs a fee check) or 2b Market Profile. The holdout (from 2025-10-01)
+   is still unused; keep it so. Known cosmetic item: `tb predict`/`tb
+   analyze` print INFO log lines from the feature build.
 
 ## 7. Open questions waiting on the user
 
