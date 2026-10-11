@@ -110,3 +110,67 @@ def test_store_round_trip_and_newest_per_coin(db_conn, tmp_path):
     assert btc["capital_limit"] == pytest.approx(250.0)
     assert btc["range_low"] < btc["range_high"]
     assert rows[1]["reasons"] == ["no market data"]
+
+
+# ---- commands
+
+import re  # noqa: E402
+
+ADVICE = re.compile(r"\b(buy|sell|long|short|enter|exit)\b", re.IGNORECASE)
+
+
+def test_signals_without_data_is_wait_and_stored(db_conn, cli):
+    out = cli.invoke(app, ["signals"])
+    assert out.exit_code == 0, out.output
+    assert "BTCUSDT  WAIT" in out.output and "no market data" in out.output
+    assert not ADVICE.search(out.output)
+    assert [r["symbol"] for r in latest_signals(db_conn)] == ["BTCUSDT"]
+
+
+def test_signals_with_trained_model(db_conn, cli):
+    _insert(db_conn, "BTCUSDT", range(0, DAYS * DAY_MINUTES))
+    assert cli.invoke(app, ["features", "build"]).exit_code == 0
+    assert cli.invoke(app, ["ml", "train", "--target", "vol3"]).exit_code == 0
+    assert cli.invoke(app, ["risk", "set", "--capital", "2000"]).exit_code == 0
+    out = cli.invoke(app, ["signals"])
+    assert out.exit_code == 0, out.output
+    assert "BTCUSDT  WAIT" in out.output                  # the test data is old
+    assert "data STALE" in out.output and "P(wild) next 24h:" in out.output
+    assert "capital limit: 500 USDT (25% of 2,000 USDT)" in out.output
+    assert "note: data quality not checked" not in out.output
+    assert not ADVICE.search(out.output)
+    nb = cli.invoke(app, ["signals", "--no-build"])
+    assert nb.exit_code == 0 and "data quality not checked (--no-build)" in nb.output
+    assert latest_signals(db_conn)[0]["p_wild"] is not None
+
+
+def test_signals_reports_quality_fail(db_conn, cli):
+    _insert(db_conn, "BTCUSDT", [m for m in range(0, DAY_MINUTES) if not 600 <= m < 780])
+    out = cli.invoke(app, ["signals"])
+    assert out.exit_code == 1
+    assert "data quality FAIL" in out.output and "BTCUSDT  WAIT" in out.output
+
+
+def test_risk_show_and_set(db_conn, cli):
+    out = cli.invoke(app, ["risk", "show"])
+    assert out.exit_code == 0 and "profile:         defensive" in out.output
+    assert "capital:         not set" in out.output
+    out = cli.invoke(app, ["risk", "set", "--profile", "return", "--wild-threshold",
+                           "0.3", "--capital", "1500", "--fee", "0.001"])
+    assert out.exit_code == 0, out.output
+    s = load_settings(db_conn)
+    assert (s.profile, s.wild_threshold, s.capital_usdt, s.fee) == ("return", 0.3, 1500, 0.001)
+    assert s.max_coin_share == 0.25
+    assert not ADVICE.search(out.output)
+    out = cli.invoke(app, ["risk", "set", "--no-capital"])
+    assert out.exit_code == 0 and load_settings(db_conn).capital_usdt is None
+
+
+@pytest.mark.parametrize("args", [
+    ["--wild-threshold", "0.99"], ["--profile", "bold"], ["--max-coin-share", "0"],
+    ["--fee", "0.5"], ["--capital", "-5"], ["--capital", "10", "--no-capital"],
+])
+def test_risk_set_rejects_bad_values(db_conn, cli, args):
+    out = cli.invoke(app, ["risk", "set", *args])
+    assert out.exit_code == 1, out.output
+    assert load_settings(db_conn) == RiskSettings()
