@@ -249,6 +249,65 @@ volatility as three buckets, direction as up/down.
   survives fees is for sub-project 4. Run times: vol3 44 min, dir2 22 min.
   Holdout still unused.
 
+## 5e. Current state of sub-project 4 (spot grid backtest)
+
+Branch `feat/backtest-4`. Spec `docs/superpowers/specs/2026-10-11-backtest-grid-4-design.md`,
+plan `docs/superpowers/plans/2026-10-11-backtest-grid-4.md`. Agreed with the
+user: grid bots steered by the volatility forecast (option A); the user's
+bots are spot grids.
+
+- New package `backtest/` (grid day simulation on 1m candles, strategies,
+  metrics, loader, report); command `tb backtest grid [--symbol] [--run]
+  [--fee]`. Uses the latest walk-forward vol3 h24 run's xgb_v1 P(wild) at
+  each day's 00:00 UTC; never the holdout.
+- Synthetic check (random walk, 2,100 days): grid_always ends at 989 USDT
+  without fees and 413 with fees (≈400 grid-fill fees, ≈190 daily
+  re-centring): on random prices fees decide; real data will tell whether
+  real swings pay for them. ~2.4 s per grid strategy per coin.
+- Final review (fresh reviewer): no Critical; no look-ahead (decision rows
+  at 23:00 UTC open_time, vol3 h24 label window = the backtest day, folds
+  purged); grid accounting matched a step-by-step simulation exactly.
+  Fixed: crash for a coin with no predictions (I1), Sortino downside over
+  all days (I2), centre-grid start independent of float rounding, days
+  whose grid step cannot pay two fees are not traded, report notes on
+  full-data days / random control / touch fills, an equal-weight
+  all-coins table, chunked minute loading. Deferred minors: exit cost on a
+  pause day is outside win share/streak; touch fills are slightly
+  optimistic; equal-quote sizing and daily re-centring differ from
+  Binance's own bot (documented in the spec).
+- **First real-data run (2026-10-11, run 10, fee 0.1 %).** 2020-01 to
+  2025-09 (SOL from 2020-08). All coins, equal weight:
+
+  | Strategy | Total | Annual | Max DD | Sharpe | Fees (% of start) |
+  |---|---|---|---|---|---|
+  | hold | +8,656 % | +117.6 % | −81.2 % | 1.42 | 0.1 % |
+  | grid_always | +287 % | +26.5 % | −53.1 % | 0.86 | 122 % |
+  | grid_vol3_25 | +229 % | +23.0 % | −38.0 % | 0.92 | 120 % |
+  | grid_vol3_30 | +187 % | +20.1 % | −47.6 % | 0.77 | 107 % |
+  | grid_vol3_35 | +171 % | +18.9 % | −48.0 % | 0.71 | 101 % |
+  | grid_random_30 | +49 % | +7.2 % | −51.7 % | 0.39 | 100 % |
+
+  vol3_30 vs always: −1.8 bp/day (CI −4.5 … +0.7), not distinguishable.
+  random_30 vs always: −5.2 bp/day (CI −7.7 … −2.7), lower.
+  Reading: daily grids made money on every coin but far less than holding
+  through the 2020–25 bull market, with fees ≈ the whole starting capital.
+  Pausing costs return (exit + re-entry costs, missed grid days); pausing on
+  forecast-wild days loses much less than pausing at random (the forecast
+  picks days), but does not beat running every day. vol3_25 had the lowest
+  drawdown and the best Sharpe, without statistical proof. Added after the
+  run: a direct `grid_vol3_30 vs grid_random_30` comparison line.
+- **Second run, fee 0.075 % (BNB rate), 2026-10-11.** All coins: hold
+  +8,658 % (Sharpe 1.42, DD −81 %); grid_always +335 % (+29.1 %/yr, Sharpe
+  0.92, DD −52 %, fees 98 %); grid_vol3_25 +275 % (Sharpe **1.00**, DD
+  **−38 %**); grid_vol3_30 +228 %; grid_random_30 +77 %.
+  vol3_30 vs always −1.7 bp/day (−4.4 … +0.8): not distinguishable.
+  **vol3_30 vs random_30 +3.2 bp/day (+0.5 … +5.9): higher** (pooled; per
+  coin +2.8 … +4.6, each interval spanning 0). So the forecast's timing is
+  measurably better than random pausing, but a full exit on paused days
+  still costs about what the timing saves. Caveat: the random control is
+  one draw (seed 0); the interval covers return noise, not the choice of
+  random days.
+
 ## 6. Next steps
 
 1. Done: the first `tb ml evaluate` on real data (results above).

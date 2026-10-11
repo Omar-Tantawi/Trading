@@ -33,7 +33,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["data*", "features*", "ml*", "dashboard*"]
+include = ["data*", "features*", "ml*", "dashboard*", "backtest*"]
 
 [tool.setuptools.package-data]
 dashboard = ["static/*", "static/vendor/*"]
