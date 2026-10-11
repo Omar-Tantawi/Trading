@@ -6,7 +6,8 @@ sub-project 1 (now merged into `master`).
 sub-project 3 (prediction ML) was merged on 2026-10-08 (`4f59d75`);
 sub-project 3.5 (dashboard) was merged on 2026-10-08 (`d43b093`);
 sub-project 3b (vol3 / dir2 targets) was merged on 2026-10-11 (`d97c496`);
-sub-project 4 (spot grid backtest) was merged on 2026-10-11 (`6c6acf7`).
+sub-project 4 (spot grid backtest) was merged on 2026-10-11 (`6c6acf7`),
+and its keep-the-coin pauses on 2026-10-11 (`abb2416`).
 
 > Trust `git log` and the spec over this document if they ever disagree.
 
@@ -359,8 +360,8 @@ bots are spot grids.
    user's approval (merged result: 296 unit + 137 db + 8 leakage canaries
    pass). Also fixed: `backtest` was missing from pyproject's package list
    (a test now checks every package is listed).
-8. Built (branch `feat/backtest-keep-pause`, user's choice): the better
-   pause. `grid_keep_vol3_25/30/35` and `grid_keep_random_30` cancel the
+8. Done and merged 2026-10-11 (`abb2416`, user's approval; merged result:
+   298 unit + 137 db + 8 leakage canaries pass): the better pause. `grid_keep_vol3_25/30/35` and `grid_keep_random_30` cancel the
    grid's orders and keep the coin on paused days.
    **Real data, fee 0.075 %, 2026-10-11, all coins equal weight:**
    grid_always +335 % (Sharpe 0.92, DD −52 %); grid_keep_vol3_25 +812 %
@@ -377,10 +378,10 @@ bots are spot grids.
    the full-exit vol3_25 still has the smallest drawdown (−38 %). The
    2020–25 bull market favours anything that holds more coin; a bear
    period test is a natural next check.
-9. **Then:** ask the user (superpowers:brainstorming). Candidates: a better
-   pause for the grid backtest (keep the coin and cancel orders on wild
-   days instead of a full exit, which costs about what the forecast's
-   timing saves); a dir2 direction backtest with fees; 2b Market Profile;
+9. **Next:** ask the user (superpowers:brainstorming). Candidates: a
+   per-year breakdown in the grid backtest report (how strategies did in
+   the 2022 bear market; the whole period is a bull market that favours
+   holding coin); a dir2 direction backtest with fees; 2b Market Profile;
    5 signals/risk. The holdout (from 2025-10-01) is still unused; keep it
    so. Known cosmetic item: `tb predict`/`tb analyze` print INFO log lines
    from the feature build.
