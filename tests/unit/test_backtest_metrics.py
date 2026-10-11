@@ -37,3 +37,11 @@ def test_diff_ci_reproducible_and_contains_mean():
     assert (m, lo, hi) == diff_ci(a, b)
     assert lo < m < hi
     assert m == pytest.approx((a - b).mean() * 1e4)
+
+
+def test_sortino_uses_all_days_for_downside():
+    eq = pd.Series([1000, 990, 990, 990, 1010.0], index=DAYS[:5])
+    s = summary(eq, pd.Series(True, index=DAYS[:5]), 0, 0.0, 1000.0)
+    ret = np.array([0, -0.01, 0, 0, 1010 / 990 - 1])
+    down = np.sqrt((np.minimum(ret, 0) ** 2).mean())
+    assert s["sortino"] == pytest.approx(ret.mean() / down * np.sqrt(365))

@@ -58,3 +58,14 @@ def test_cli_backtest_grid(db_conn, runs, cli):  # noqa: F811
         assert name in r.output
     assert "grid_vol3_30 vs grid_always" in r.output and "Not advice" in r.output
     assert not ADVICE.search(r.output)
+
+
+def test_coin_missing_from_run_is_reported_not_a_crash(db_conn, runs, cli, monkeypatch):  # noqa: F811
+    from data.config import get_settings
+    from data.storage.repository import upsert_symbol
+    upsert_symbol(db_conn, symbol="ETHUSDT"); db_conn.commit()
+    monkeypatch.setenv("SYMBOLS", "BTCUSDT,ETHUSDT")
+    get_settings.cache_clear()
+    r = cli.invoke(app, ["backtest", "grid"])
+    assert r.exit_code == 0, r.output
+    assert "ETHUSDT: no test days" in r.output

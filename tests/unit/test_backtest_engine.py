@@ -71,3 +71,20 @@ def test_random_control_pauses_as_often_as_vol3_30():
     r = run_strategy(data, "grid_random_30", FEE, SLIP)
     assert (~v.active).sum() == (~r.active).sum()
     assert not (v.active == r.active).all()
+
+
+def test_coin_without_predictions_gives_empty_results():
+    empty = CoinData(minutes=pd.DataFrame(columns=["open", "high", "low", "close"],
+                                          index=pd.DatetimeIndex([], tz="UTC")),
+                     days=pd.DataFrame(columns=["atr_pct", "p_wild"],
+                                       index=pd.DatetimeIndex([], tz="UTC")))
+    for name in STRATEGIES:
+        r = run_strategy(empty, name, FEE, SLIP)
+        assert r.equity.empty and r.skipped_days == 0
+
+
+def test_day_with_grid_step_below_fees_is_not_traded():
+    data = _data(days=5)
+    data.days["atr_pct"] = 0.00005          # step far below 2 x fee
+    r = run_strategy(data, "grid_always", FEE, SLIP)
+    assert not r.active.any() and (r.equity == START).all()

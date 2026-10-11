@@ -22,6 +22,17 @@ def _verdict(name: str, other: str, m: float, lo: float, hi: float) -> str:
     return f"{head}: not distinguishable from {other}"
 
 
+def _pooled(coins: dict[str, dict[str, StrategyResult]], name: str) -> StrategyResult:
+    """Equal-weight portfolio of the coins: mean daily return, compounded."""
+    rets = pd.concat([daily_returns(r[name]) for r in coins.values()], axis=1)
+    active = pd.concat([r[name].active for r in coins.values()], axis=1).fillna(False)
+    ret = rets.mean(axis=1)
+    return StrategyResult(
+        equity=START * (1 + ret).cumprod(), active=active.any(axis=1).astype(bool),
+        round_trips=sum(r[name].round_trips for r in coins.values()),
+        fees=sum(r[name].fees for r in coins.values()) / len(coins), skipped_days=0)
+
+
 def _table(results: dict[str, StrategyResult]) -> list[str]:
     lines = [f"  {'strategy':<16}{'total':>9}{'annual':>9}{'max DD':>9}{'Sharpe':>8}"
              f"{'Sortino':>8}{'active':>8}{'trips':>8}{'fees':>8}{'win':>7}{'streak':>7}"]
@@ -54,12 +65,21 @@ def render(run_id: int, fee: float, slippage: float,
             lines.append("  " + _verdict(a, b, *diff_ci(daily_returns(results[a]),
                                                         daily_returns(results[b]))))
         lines.append("")
-    if len(coins) > 1:
-        lines.append("All coins (equal weight, mean daily return):")
+    with_days = {s: r for s, r in coins.items() if len(r["cash"].equity)}
+    if len(with_days) > 1:
+        lines.append("All coins, equal weight (mean daily return of the coins, "
+                     "compounded; trips summed, fees averaged):")
+        lines += _table({n: _pooled(with_days, n) for n in STRATEGIES})
+        coins = with_days
         for a, b in COMPARISONS:
             ra = pd.concat([daily_returns(r[a]) for r in coins.values()], axis=1).mean(axis=1)
             rb = pd.concat([daily_returns(r[b]) for r in coins.values()], axis=1).mean(axis=1)
             lines.append("  " + _verdict(a, b, *diff_ci(ra, rb)))
         lines.append("")
+    lines.append("Notes: a day is simulated only when its full 1440 minutes, its "
+                 "atr_pct and its forecast are stored; grids hold USDT on other days "
+                 "(the hold strategy does not). The random pause days are drawn over "
+                 "the whole period. Limit orders fill when the price touches their "
+                 "level.")
     lines.append("Past simulated results; real fills, fees and outages differ. Not advice.")
     return "\n".join(lines)

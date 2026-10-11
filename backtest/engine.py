@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from backtest.grid import levels, path, run_day
+from backtest.grid import levels, path, run_day, step_too_small
 
 START = 1000.0
 SLIPPAGE = 0.0005
@@ -56,6 +56,9 @@ def run_strategy(data: CoinData, name: str, fee: float,
                  slippage: float = SLIPPAGE) -> StrategyResult:
     if name not in STRATEGIES:
         raise ValueError(f"unknown strategy {name!r}")
+    if data.days.empty:                       # coin not in the run
+        none = pd.Series(dtype=float, index=pd.DatetimeIndex([], tz="UTC"))
+        return StrategyResult(none, none.astype(bool), 0, 0.0, 0)
     cal = _calendar(data)
     by_day = {d: g for d, g in data.minutes.groupby(data.minutes.index.floor("1D"))}
     tradable = _tradable(data, cal, by_day)
@@ -83,11 +86,13 @@ def run_strategy(data: CoinData, name: str, fee: float,
                 run = p_wild[day] < THRESHOLDS[name]
             else:                                   # grid_random_30
                 run = day not in paused
+        if name.startswith("grid") and run:
+            x = path(*(m[c].to_numpy() for c in ("open", "high", "low", "close")))
+            lv = levels(x[0], float(data.days.at[day, "atr_pct"]))
+            run = not step_too_small(lv, fee)   # such a grid only pays fees
         if name.startswith("grid"):
             if run:
-                x = path(*(m[c].to_numpy() for c in ("open", "high", "low", "close")))
-                r = run_day(x, levels(x[0], float(data.days.at[day, "atr_pct"])),
-                            cash=cash, coin=coin, fee=fee, slippage=slippage)
+                r = run_day(x, lv, cash=cash, coin=coin, fee=fee, slippage=slippage)
                 cash, coin = r.cash, r.coin
                 fees += r.fees
                 trips += r.round_trips

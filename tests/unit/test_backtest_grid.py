@@ -71,3 +71,12 @@ def test_cash_never_negative_over_random_days():
         r = run_day(x, levels(p0, 0.006), cash=cash, coin=coin, fee=FEE, slippage=0.0005)
         assert r.cash >= -1e-9
         cash, coin = r.cash, r.coin
+
+
+def test_centre_grid_start_does_not_depend_on_rounding():
+    rng = np.random.default_rng(3)
+    for p0 in rng.uniform(0.1, 100_000, 2000):
+        lv = levels(p0, 0.0071)
+        r = run_day(np.array([p0]), lv, cash=1000.0, coin=0.0, fee=0.0, slippage=0.0)
+        q = 0.995 * 1000 / N_GRIDS / lv[:-1]
+        assert r.coin == pytest.approx(q[N_GRIDS // 2:].sum())     # upper 5 grids

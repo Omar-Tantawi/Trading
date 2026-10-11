@@ -264,6 +264,17 @@ bots are spot grids.
   without fees and 413 with fees (≈400 grid-fill fees, ≈190 daily
   re-centring): on random prices fees decide; real data will tell whether
   real swings pay for them. ~2.4 s per grid strategy per coin.
+- Final review (fresh reviewer): no Critical; no look-ahead (decision rows
+  at 23:00 UTC open_time, vol3 h24 label window = the backtest day, folds
+  purged); grid accounting matched a step-by-step simulation exactly.
+  Fixed: crash for a coin with no predictions (I1), Sortino downside over
+  all days (I2), centre-grid start independent of float rounding, days
+  whose grid step cannot pay two fees are not traded, report notes on
+  full-data days / random control / touch fills, an equal-weight
+  all-coins table, chunked minute loading. Deferred minors: exit cost on a
+  pause day is outside win share/streak; touch fills are slightly
+  optimistic; equal-quote sizing and daily re-centring differ from
+  Binance's own bot (documented in the spec).
 - **Not yet run on real data.**
 
 ## 6. Next steps

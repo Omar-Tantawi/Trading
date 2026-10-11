@@ -28,6 +28,11 @@ def levels(p0: float, atr_pct: float, n: int = N_GRIDS) -> np.ndarray:
     return np.linspace(p0 * (1 - w), p0 * (1 + w), n + 1)
 
 
+def step_too_small(lv: np.ndarray, fee: float) -> bool:
+    """True when one grid step cannot pay the two fees of a round trip."""
+    return bool(((lv[1:] - lv[:-1]) / lv[:-1]).min() <= 2 * fee)
+
+
 def path(o: np.ndarray, h: np.ndarray, l: np.ndarray, c: np.ndarray) -> np.ndarray:
     """Four prices per minute: open, low, high, close for a minute that
     closed up (or flat); open, high, low, close otherwise."""
@@ -46,7 +51,9 @@ def run_day(prices: np.ndarray, lv: np.ndarray, *, cash: float, coin: float,
     lower, upper = lv[:-1], lv[1:]
     equity = cash + coin * p0
     q = CASH_SHARE * equity / n / lower
-    holds = lower >= p0                       # grids entirely above the price
+    # grids entirely above the price; the tolerance keeps float rounding of
+    # the centre level (meant to equal p0) from changing the start
+    holds = lower >= p0 * (1 - 1e-9)
     fees, fills = 0.0, 0
 
     delta = float(q[holds].sum()) - coin

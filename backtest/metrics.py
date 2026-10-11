@@ -22,8 +22,8 @@ def summary(equity: pd.Series, active: pd.Series, round_trips: int,
     peak = np.maximum.accumulate(np.concatenate([[start], values]))
     dd = (np.concatenate([[start], values]) / peak - 1).min() if days else 0.0
     sd = ret.std(ddof=1) if days > 1 else 0.0
-    down = ret[ret < 0]
-    sd_down = np.sqrt((down ** 2).mean()) if len(down) else 0.0
+    # downside deviation over all days (zero-return days count as 0)
+    sd_down = np.sqrt((np.minimum(ret, 0) ** 2).mean()) if days else 0.0
     act = active.to_numpy(dtype=bool)
     act_ret = ret[act]
     return {
