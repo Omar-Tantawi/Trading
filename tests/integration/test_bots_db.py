@@ -239,3 +239,16 @@ def test_times_read_back_in_utc_whatever_the_session_zone(db_conn):
         cur.execute("SET TIME ZONE 'Europe/Istanbul'")
     b = get_bot(db_conn, bid)
     assert b["start_time"] == T0 and b["start_time"].utcoffset() == timedelta(0)
+
+
+def test_database_refuses_bad_rows_too(db_conn):
+    import psycopg
+    for sql in ("INSERT INTO bots (name, symbol, invest_usdt, start_time, fee) "
+                "VALUES ('x', 'BTCUSDT', 0.5, now(), 0)",
+                "INSERT INTO bots (name, symbol, invest_usdt, start_time, fee) "
+                "VALUES ('x', 'BTCUSDT', 'Infinity', now(), 0)",
+                "INSERT INTO bots (name, symbol, invest_usdt, start_time, fee) "
+                "VALUES ('x', 'btcusdt', 10, now(), 0)"):
+        with pytest.raises(psycopg.errors.CheckViolation):
+            db_conn.execute(sql)
+        db_conn.rollback()

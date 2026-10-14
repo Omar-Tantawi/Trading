@@ -380,6 +380,18 @@ and Grid profit).
 - Rulings (builder check): `undo` fixes a mistyped update/stop; per-bot fee
   so later fee changes do not rewrite history. Loss limits stay deferred:
   updates are typed irregularly, so a daily limit cannot be checked.
+- Final review (fresh reviewer): no Critical or Important. Fixed the
+  minors: `stop` help text, years outside 2017–2100 refused cleanly (Windows
+  raised OSError), cheap-coin ranges keep their digits, invest ≥ 1 USDT,
+  "level" relative to the investment, times read back in UTC whatever the
+  DB session zone, DB checks against NaN/Infinity, the Bots table scrolls
+  inside its own box at phone width, more tests (NaN, −invest, 10-min
+  boundary, help texts).
+- Test infrastructure fix: the scheduled aggregate refresh jobs could
+  materialize one test's candles mid-suite, so 5 feature/chart tests failed
+  in full runs only. `tests/conftest.py` now pauses those jobs in the test
+  DB and clears the views before each db test. Result: 354 unit + 191 db
+  pass (cloud).
 - Not yet run on the user's PC (needs `git pull`, `pip install -e
   ".[dev]"` for the new package, `tb db upgrade` for migration 008).
 
