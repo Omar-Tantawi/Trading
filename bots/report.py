@@ -72,6 +72,17 @@ def render_list(rows: list[dict], t: Totals) -> str:
     return "\n".join(lines)
 
 
+def reading_line(h: dict) -> str:
+    """One update of a bot's history, against holding."""
+    stop = " (stop)" if h["final"] else ""
+    if h["comparison"] is not None:
+        c = h["comparison"]
+        return (f"{_when(h['at'], h['days'])}{stop}: {_result(c)}; "
+                + _verdict(c.verdict, c.diff, c.diff_pts))
+    return (f"{_when(h['at'], h['days'])}{stop}: bot "
+            f"{_money(h['total_profit'])}; {h['note']}")
+
+
 def render_show(bot: dict, hist: list[dict]) -> str:
     lines = [_head(bot)]
     extra = []
@@ -84,14 +95,6 @@ def render_show(bot: dict, hist: list[dict]) -> str:
     lines.append("")
     if not hist:
         lines.append(f"no update yet (tb bots update {bot['id']} --profit X)")
-    for h in hist:
-        stop = " (stop)" if h["final"] else ""
-        if h["comparison"] is not None:
-            c = h["comparison"]
-            lines.append(f"{_when(h['at'], h['days'])}{stop}: {_result(c)}; "
-                         + _verdict(c.verdict, c.diff, c.diff_pts))
-        else:
-            lines.append(f"{_when(h['at'], h['days'])}{stop}: bot "
-                         f"{_money(h['total_profit'])}; {h['note']}")
+    lines += [reading_line(h) for h in hist]
     lines += ["", FOOTER]
     return "\n".join(lines)

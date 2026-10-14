@@ -128,3 +128,86 @@ def test_rows_and_history(db_conn):
     h = history(db_conn, a)
     assert [x["total_profit"] for x in h] == [3.0, 4.0]
     assert all(x["comparison"] is not None for x in h)
+
+
+# ---- commands
+
+import re  # noqa: E402
+
+from typer.testing import CliRunner  # noqa: E402
+
+from data.cli import app  # noqa: E402
+from data.storage.db import connect as real_connect  # noqa: E402
+
+ADVICE = re.compile(r"\b(buy|sell|long|short|enter|exit)\b", re.IGNORECASE)
+runner = CliRunner()
+
+
+@pytest.fixture
+def cli(monkeypatch, migrated_db):
+    monkeypatch.setattr("data.cli.connect", lambda: real_connect(migrated_db))
+    return runner
+
+
+def _run(cli, *args):
+    out = cli.invoke(app, ["bots", *args])
+    assert not ADVICE.search(out.output), out.output
+    return out
+
+
+def test_full_flow(db_conn, cli):
+    _insert(db_conn, "BTCUSDT", range(0, 180))
+    out = _run(cli, "add", "--symbol", "btcusdt", "--invest", "500", "--start",
+               "2024-05-01 00:10", "--utc", "--low", "90", "--high", "110", "--grids", "10")
+    assert out.exit_code == 0, out.output
+    bid = list_bots(db_conn)[0]["id"]
+    assert (f"bot {bid} recorded: BTCUSDT grid, 500.00 USDT, started 2024-05-01 "
+            "00:10 UTC") in out.output
+    out = _run(cli, "update", str(bid), "--profit", "3.5", "--at", "2024-05-01 01:00", "--utc")
+    assert out.exit_code == 0, out.output
+    assert "update stored for bot" in out.output and "2024-05-01 01:00 UTC" in out.output
+    assert re.search(r"bot \+3\.50 USDT \(\+0\.70%\), holding [+-][\d.]+ USDT.*; bot "
+                     r"(ahead of|behind) holding by", out.output), out.output
+    out = _run(cli, "list")
+    assert out.exit_code == 0 and "running since 2024-05-01 00:10 UTC" in out.output
+    assert "All bots (1 of 1 compared" in out.output
+    out = _run(cli, "stop", str(bid), "--profit", "4", "--at", "2024-05-01 02:00", "--utc")
+    assert out.exit_code == 0 and "stopped" in out.output
+    out = _run(cli, "show", str(bid))
+    assert out.exit_code == 0 and "(stop)" in out.output and "range 90.00 to 110.00" in out.output
+    out = _run(cli, "update", str(bid), "--profit", "5", "--at", "2024-05-01 02:30", "--utc")
+    assert out.exit_code == 1 and "is stopped" in out.output
+    out = _run(cli, "undo", str(bid))
+    assert out.exit_code == 0 and "removed the update of 2024-05-01 02:00 UTC" in out.output
+    assert "running again" in out.output
+    out = _run(cli, "delete", str(bid))
+    assert out.exit_code == 1 and "--yes" in out.output and get_bot(db_conn, bid)
+    out = _run(cli, "delete", str(bid), "--yes")
+    assert out.exit_code == 0 and get_bot(db_conn, bid) is None
+
+
+def test_local_time_is_echoed_in_utc(db_conn, cli):
+    out = _run(cli, "add", "--symbol", "ETHUSDT", "--invest", "100", "--start",
+               "2024-05-01 09:30")
+    assert out.exit_code == 0, out.output
+    assert re.search(r"started 2024-05-01 \d\d:30 UTC \(you typed 2024-05-01 09:30 "
+                     r"local time\)", out.output)
+
+
+@pytest.mark.parametrize("args, msg", [
+    (["add", "--symbol", "BTCEUR", "--invest", "5", "--start", "2024-05-01 00:00"], "USDT"),
+    (["add", "--symbol", "BTCUSDT", "--invest", "5", "--start", "1 May"], "YYYY-MM-DD"),
+    (["update", "7", "--profit", "1"], "no bot 7"),
+    (["show", "7"], "no bot 7"),
+    (["undo", "7"], "no bot 7"),
+    (["delete", "7", "--yes"], "no bot 7"),
+])
+def test_errors_exit_1_and_store_nothing(db_conn, cli, args, msg):
+    out = _run(cli, *args)
+    assert out.exit_code == 1 and msg in out.output, out.output
+    assert list_bots(db_conn) == []
+
+
+def test_list_empty(db_conn, cli):
+    out = _run(cli, "list")
+    assert out.exit_code == 0 and "no bots yet" in out.output
