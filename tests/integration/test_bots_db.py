@@ -29,7 +29,10 @@ def test_add_and_read(db_conn):
 
 @pytest.mark.parametrize("kw, msg", [
     ({"symbol": "BTCEUR"}, "USDT"), ({"symbol": "btc"}, "USDT"),
-    ({"invest": 0.0}, "invest"), ({"start": NOW + timedelta(minutes=1)}, "future"),
+    ({"invest": 0.0}, "invest"), ({"invest": 0.5}, "at least 1"),
+    ({"invest": float("nan")}, "number"), ({"invest": float("inf")}, "number"),
+    ({"low": float("nan"), "high": 2.0}, "number"),
+    ({"start": NOW + timedelta(minutes=1)}, "future"),
     ({"low": 90.0}, "both"), ({"low": 110.0, "high": 90.0}, "low"),
     ({"grids": 1}, "grids"), ({"grids": 501}, "grids"),
 ])
@@ -47,7 +50,9 @@ def test_updates_stop_and_rules(db_conn):
         (T0 - timedelta(minutes=1), 1.0, "before the bot's start"),
         (T0 + timedelta(hours=1), 1.0, "before its previous update"),
         (NOW + timedelta(minutes=1), 1.0, "future"),
-        (T0 + timedelta(days=2), -500.0, "more than"),
+        (T0 + timedelta(days=2), -500.0, "would leave nothing"),
+        (T0 + timedelta(days=2), -600.0, "would leave nothing"),
+        (T0 + timedelta(days=2), float("nan"), "number"),
     ]:
         with pytest.raises(ValueError, match=msg):
             add_update(db_conn, bid, at, profit, final=False, now=NOW)
@@ -103,6 +108,7 @@ def test_price_at(db_conn):
     assert price_at(db_conn, "BTCUSDT", C0 + timedelta(minutes=30)) == open30
     assert price_at(db_conn, "BTCUSDT", C0 + timedelta(minutes=30, seconds=40)) == open30
     assert price_at(db_conn, "BTCUSDT", C0 + timedelta(minutes=59 + 9)) is not None
+    assert price_at(db_conn, "BTCUSDT", C0 + timedelta(minutes=59 + 10)) is not None
     assert price_at(db_conn, "BTCUSDT", C0 + timedelta(minutes=59 + 11)) is None
     assert price_at(db_conn, "BTCUSDT", C0 - timedelta(minutes=1)) is None
     assert price_at(db_conn, "ETHUSDT", C0) is None
@@ -190,13 +196,17 @@ def test_local_time_is_echoed_in_utc(db_conn, cli):
     out = _run(cli, "add", "--symbol", "ETHUSDT", "--invest", "100", "--start",
                "2024-05-01 09:30")
     assert out.exit_code == 0, out.output
-    assert re.search(r"started 2024-05-01 \d\d:30 UTC \(you typed 2024-05-01 09:30 "
-                     r"local time\)", out.output)
+    from bots.times import parse_time
+    utc = parse_time("2024-05-01 09:30", utc=False)
+    assert (f"started {utc:%Y-%m-%d %H:%M} UTC (you typed 2024-05-01 09:30 "
+            "local time)") in out.output
 
 
 @pytest.mark.parametrize("args, msg", [
     (["add", "--symbol", "BTCEUR", "--invest", "5", "--start", "2024-05-01 00:00"], "USDT"),
     (["add", "--symbol", "BTCUSDT", "--invest", "5", "--start", "1 May"], "YYYY-MM-DD"),
+    (["add", "--symbol", "BTCUSDT", "--invest", "5", "--start", "1926-05-01 00:00"],
+     "out of range"),
     (["update", "7", "--profit", "1"], "no bot 7"),
     (["show", "7"], "no bot 7"),
     (["undo", "7"], "no bot 7"),
@@ -211,3 +221,21 @@ def test_errors_exit_1_and_store_nothing(db_conn, cli, args, msg):
 def test_list_empty(db_conn, cli):
     out = _run(cli, "list")
     assert out.exit_code == 0 and "no bots yet" in out.output
+
+
+def test_negative_profit_through_the_cli(db_conn, cli):
+    _insert(db_conn, "BTCUSDT", range(0, 120))
+    assert _run(cli, "add", "--symbol", "BTCUSDT", "--invest", "500", "--start",
+                "2024-05-01 00:10", "--utc").exit_code == 0
+    bid = list_bots(db_conn)[0]["id"]
+    out = _run(cli, "update", str(bid), "--profit", "-5", "--at", "2024-05-01 01:00", "--utc")
+    assert out.exit_code == 0, out.output
+    assert updates(db_conn, bid)[0]["total_profit"] == -5.0
+
+
+def test_times_read_back_in_utc_whatever_the_session_zone(db_conn):
+    bid = _bot(db_conn)
+    with db_conn.cursor() as cur:
+        cur.execute("SET TIME ZONE 'Europe/Istanbul'")
+    b = get_bot(db_conn, bid)
+    assert b["start_time"] == T0 and b["start_time"].utcoffset() == timedelta(0)

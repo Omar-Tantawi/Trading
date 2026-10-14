@@ -5,12 +5,19 @@ raises ValueError and stores nothing.
 """
 import math
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 _SYMBOL = re.compile(r"^[A-Z0-9]+USDT$")
 _BOT = ("id", "name", "symbol", "invest_usdt", "start_time", "fee", "range_low",
         "range_high", "grids", "stopped_at", "created_at")
 _UPDATE = ("id", "bot_id", "at", "total_profit", "final", "created_at")
+MIN_INVEST = 1.0
+
+
+def _utc(row: dict) -> dict:
+    """Times as UTC whatever the database session's time zone."""
+    return {k: v.astimezone(timezone.utc) if isinstance(v, datetime) else v
+            for k, v in row.items()}
 
 
 def _finite(name: str, v: float) -> None:
@@ -25,8 +32,8 @@ def add_bot(conn, *, symbol: str, invest: float, start: datetime, fee: float,
         raise ValueError(f"symbol must be a coin against USDT in capitals, "
                          f"like BTCUSDT; got {symbol!r}")
     _finite("invest", invest)
-    if invest <= 0:
-        raise ValueError("invest must be more than 0 USDT")
+    if invest < MIN_INVEST:
+        raise ValueError(f"invest must be at least {MIN_INVEST:g} USDT")
     if start > now:
         raise ValueError(f"start {start:%Y-%m-%d %H:%M} UTC is in the future")
     if (low is None) != (high is None):
@@ -51,20 +58,20 @@ def get_bot(conn, bot_id: int) -> dict | None:
     with conn.cursor() as cur:
         cur.execute(f"SELECT {', '.join(_BOT)} FROM bots WHERE id = %s", (bot_id,))
         row = cur.fetchone()
-    return dict(zip(_BOT, row)) if row else None
+    return _utc(dict(zip(_BOT, row))) if row else None
 
 
 def list_bots(conn) -> list[dict]:
     with conn.cursor() as cur:
         cur.execute(f"SELECT {', '.join(_BOT)} FROM bots ORDER BY id")
-        return [dict(zip(_BOT, r)) for r in cur.fetchall()]
+        return [_utc(dict(zip(_BOT, r))) for r in cur.fetchall()]
 
 
 def updates(conn, bot_id: int) -> list[dict]:
     with conn.cursor() as cur:
         cur.execute(f"SELECT {', '.join(_UPDATE)} FROM bot_updates WHERE bot_id = %s "
                     "ORDER BY at, id", (bot_id,))
-        return [dict(zip(_UPDATE, r)) for r in cur.fetchall()]
+        return [_utc(dict(zip(_UPDATE, r))) for r in cur.fetchall()]
 
 
 def add_update(conn, bot_id: int, at: datetime, profit: float, *, final: bool,
@@ -77,8 +84,8 @@ def add_update(conn, bot_id: int, at: datetime, profit: float, *, final: bool,
                          "removes its stop update")
     _finite("profit", profit)
     if profit <= -bot["invest_usdt"]:
-        raise ValueError(f"a loss of {-profit:,.2f} USDT is more than the "
-                         f"{bot['invest_usdt']:,.2f} USDT invested")
+        raise ValueError(f"a loss of {-profit:,.2f} USDT would leave nothing of "
+                         f"the {bot['invest_usdt']:,.2f} USDT invested")
     if at > now:
         raise ValueError(f"{at:%Y-%m-%d %H:%M} UTC is in the future")
     if at < bot["start_time"]:

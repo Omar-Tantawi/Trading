@@ -14,6 +14,8 @@ def parse_time(text: str, utc: bool, local_tz: tzinfo | None = None) -> datetime
             continue
     else:
         raise ValueError(f"time {text!r} is not in the form YYYY-MM-DD HH:MM")
+    if not 2017 <= naive.year <= 2100:     # Binance opened in 2017
+        raise ValueError(f"time {text!r} is out of range (years 2017 to 2100)")
     if utc:
         return naive.replace(tzinfo=timezone.utc)
     # astimezone() on a naive time applies the PC zone's rules for that date

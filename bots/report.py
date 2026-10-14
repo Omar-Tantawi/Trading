@@ -6,6 +6,13 @@ FOOTER = ("Bot results are the Total profit typed in from the Binance app; "
           "(one fee) and kept. Past results. Not advice.")
 
 
+def _price(v: float) -> str:
+    """Enough digits for coins priced well under 1 USDT."""
+    if abs(v) >= 10:
+        return f"{v:,.2f}"
+    return f"{v:.10f}".rstrip("0").rstrip(".")
+
+
 def _money(v: float) -> str:
     return f"{v:+,.2f} USDT"
 
@@ -87,7 +94,7 @@ def render_show(bot: dict, hist: list[dict]) -> str:
     lines = [_head(bot)]
     extra = []
     if bot.get("range_low") is not None:
-        extra.append(f"range {bot['range_low']:,.2f} to {bot['range_high']:,.2f}")
+        extra.append(f"range {_price(bot['range_low'])} to {_price(bot['range_high'])}")
     if bot.get("grids") is not None:
         extra.append(f"{bot['grids']} grids")
     if extra:

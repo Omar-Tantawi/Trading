@@ -7,10 +7,11 @@ its own fees.
 from dataclasses import asdict, dataclass
 
 LEVEL_USDT = 0.01
+LEVEL_SHARE = 0.0001     # 0.01 pts of the investment
 
 
-def _verdict(diff: float) -> str:
-    if abs(diff) < LEVEL_USDT:
+def _verdict(diff: float, invest: float) -> str:
+    if abs(diff) < max(LEVEL_USDT, LEVEL_SHARE * invest):
         return "level"
     return "ahead" if diff > 0 else "behind"
 
@@ -37,7 +38,7 @@ def compare(invest: float, fee: float, profit: float, p_start: float,
     diff = profit - hold
     return Comparison(bot_profit=profit, bot_pct=profit / invest,
                       hold_profit=hold, hold_pct=hold / invest, diff=diff,
-                      diff_pts=diff / invest, verdict=_verdict(diff),
+                      diff_pts=diff / invest, verdict=_verdict(diff, invest),
                       p_start=p_start, p_end=p_end)
 
 
@@ -69,4 +70,4 @@ def totals(rows: list[tuple[float, Comparison | None]]) -> Totals:
     return Totals(n_bots=len(rows), n_compared=len(done), invested=invested,
                   bot_profit=bot, hold_profit=hold, diff=diff,
                   bot_pct=share(bot), hold_pct=share(hold), diff_pts=share(diff),
-                  verdict=_verdict(diff) if done else None)
+                  verdict=_verdict(diff, invested) if done else None)

@@ -61,3 +61,19 @@ def test_show_history():
     assert "2026-10-02 09:00 UTC" in out and "(stop)" in out
     assert "no stored price" in out
     assert not ADVICE.search(out)
+
+
+def test_cheap_coin_range_keeps_its_digits():
+    out = render_show(row(range_low=0.0000085, range_high=0.000012, grids=20), [])
+    assert "range 0.0000085 to 0.000012, 20 grids" in out
+
+
+def test_help_texts_have_no_advice_words():
+    from typer.testing import CliRunner
+
+    from data.cli import app
+    for cmd in ("add", "update", "stop", "undo", "delete", "list", "show"):
+        out = CliRunner().invoke(app, ["bots", cmd, "--help"]).output
+        out = out.replace("Show this message and exit", "")   # Typer's own line
+        assert not ADVICE.search(out), (cmd, out)
+        assert "The final The" not in out

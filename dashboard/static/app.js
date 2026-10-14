@@ -244,8 +244,9 @@ async function loadSignals() {
 }
 
 // ---- bots tab
-const usdt = (v) => `${v >= 0 ? "+" : ""}${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+const usdt = (v) => `${v >= 0 ? "+" : ""}${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;   // the column says USDT
 const pts = (v) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(2)}`;
+const pct2 = (v) => `${pts(v)}%`;   // two decimals, as tb bots list
 
 function verdictText(c) {
   if (c.verdict === "level") return "level with holding";
@@ -264,18 +265,18 @@ async function loadBots() {
       const c = b.comparison;
       cell(r, b.id); cell(r, b.name); cell(r, b.symbol); cell(r, b.status);
       cell(r, utc(isoUtc(b.start_time)));
-      cell(r, `${num(b.invest_usdt)} USDT`);
+      cell(r, num(b.invest_usdt));
       cell(r, utc(isoUtc(b.at)));
-      cell(r, c ? `${usdt(c.bot_profit)} (${pct(c.bot_pct)})` : (b.total_profit == null ? "-" : usdt(b.total_profit)));
-      cell(r, c ? `${usdt(c.hold_profit)} (${pct(c.hold_pct)})` : "-");
-      cell(r, c ? verdictText(c) : b.note, c && c.verdict === "behind" ? "stale" : "");
+      cell(r, c ? `${usdt(c.bot_profit)} (${pct2(c.bot_pct)})` : (b.total_profit == null ? "-" : usdt(b.total_profit)));
+      cell(r, c ? `${usdt(c.hold_profit)} (${pct2(c.hold_pct)})` : "-");
+      cell(r, c ? verdictText(c) : b.note);
     }
     const t = d.totals, r = body.insertRow();
     r.className = "total";
     cell(r, ""); cell(r, "All bots"); cell(r, ""); cell(r, `${t.n_compared} of ${t.n_bots} compared`);
-    cell(r, ""); cell(r, t.n_compared ? `${num(t.invested)} USDT` : "-"); cell(r, "");
-    cell(r, t.n_compared ? `${usdt(t.bot_profit)} (${pct(t.bot_pct)})` : "-");
-    cell(r, t.n_compared ? `${usdt(t.hold_profit)} (${pct(t.hold_pct)})` : "-");
+    cell(r, ""); cell(r, t.n_compared ? num(t.invested) : "-"); cell(r, "");
+    cell(r, t.n_compared ? `${usdt(t.bot_profit)} (${pct2(t.bot_pct)})` : "-");
+    cell(r, t.n_compared ? `${usdt(t.hold_profit)} (${pct2(t.hold_pct)})` : "-");
     cell(r, t.n_compared ? verdictText(t) : "nothing to compare yet");
   } catch (e) { const r = body.insertRow(); cell(r, `Could not load: ${e.message}`, "stale"); }
 }

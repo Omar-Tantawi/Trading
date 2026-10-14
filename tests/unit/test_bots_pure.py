@@ -75,3 +75,16 @@ def test_parse_uses_the_pc_zone_by_default():
 def test_parse_rejects_other_formats(text):
     with pytest.raises(ValueError, match="YYYY-MM-DD HH:MM"):
         parse_time(text, utc=False, local_tz=PLUS3)
+
+
+def test_parse_out_of_range_year_is_a_clean_error():
+    with pytest.raises(ValueError):
+        parse_time("1926-10-14 09:30", utc=False)
+    with pytest.raises(ValueError):
+        parse_time("1926-10-14 09:30", utc=True)
+
+
+def test_level_is_relative_to_the_investment():
+    # 0.05 USDT on 1,000,000 USDT is 0.000005 pts: level
+    c = compare(invest=1_000_000, fee=0.0, profit=0.05, p_start=100, p_end=100)
+    assert c.verdict == "level"

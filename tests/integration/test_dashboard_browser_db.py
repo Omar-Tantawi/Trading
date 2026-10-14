@@ -105,7 +105,8 @@ def test_every_tab_renders_without_errors(server):
         page.wait_for_selector("#bots-table tbody tr:has-text('BTCUSDT')")
         text = page.inner_text("#bots")
         assert "running" in text and "no update yet" not in text
-        assert re.search(r"(ahead of|behind) holding|level", page.inner_text("#bots-table"))
+        assert re.search(r"(ahead of|behind) holding by [\d,.]+ USDT|level with holding",
+                         page.inner_text("#bots-table"))
         assert "All bots" in page.inner_text("#bots-table")
         assert not re.search(r"\b(buy|sell|long|short|enter|exit)\b", text, re.IGNORECASE)
         assert page.evaluate("document.documentElement.scrollWidth") <= 700

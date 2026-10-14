@@ -739,7 +739,7 @@ def _typed_time(text: str | None, utc: bool) -> tuple[datetime, str]:
     try:
         t = parse_time(text, utc)
     except ValueError as exc:
-        _bots_fail(str(exc))
+        _bots_fail(f"not stored: {exc}")
     return t, "" if utc else f" (you typed {text.strip()} local time)"
 
 
@@ -817,7 +817,8 @@ def bots_update(
 @bots_app.command("stop")
 def bots_stop(
     bot_id: int = typer.Argument(..., help="From tb bots list"),
-    profit: float = typer.Option(..., help="The final " + PROFIT_HELP),
+    profit: float = typer.Option(..., help="The bot's final Total profit in USDT "
+                                 "as the Binance app shows it (not Grid profit)"),
     at: str = typer.Option(None, help="When it stopped: " + TIME_HELP + "; default now"),
     utc: bool = typer.Option(False, "--utc", help="Times are UTC, not local time"),
 ):
