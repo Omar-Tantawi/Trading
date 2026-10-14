@@ -43,7 +43,7 @@ def db_conn(migrated_db):
     try:
         with conn.cursor() as cur:
             # the feature tables reference symbols, so they go first
-            for table in ("signals", "risk_settings", "ml_runs",
+            for table in ("bot_updates", "bots", "signals", "risk_settings", "ml_runs",
                           "features_5m", "features_15m", "features_1h",
                           "features_4h", "features_1d",
                           "candles_1m", "book_ticker", "ingestion_runs",
