@@ -104,3 +104,23 @@ def test_signals_empty_then_newest_per_coin(client, db_conn):
     assert g["status"] == "WAIT" and g["p_wild"] == 0.4 and g["capital_limit"] == 250.0
     assert g["reasons"] == ["wild day expected (P(wild) 40.0% >= 25%)"]
     assert d["settings"]["profile"] == "return" and "kept the coin" in d["profile_note"]
+
+
+def test_bots_empty_then_filled(client, db_conn):
+    from datetime import timedelta
+
+    from bots.store import add_bot, add_update
+    from tests.integration.test_features_cli_db import T0
+
+    d = client.get("/api/bots").json()
+    assert d["bots"] == [] and d["totals"]["n_bots"] == 0
+    now = T0 + timedelta(days=20)
+    a = add_bot(db_conn, symbol="BTCUSDT", invest=500.0, start=T0, fee=0.0, now=now)
+    add_update(db_conn, a, T0 + timedelta(days=2), 7.5, final=False, now=now)
+    add_bot(db_conn, symbol="SOLUSDT", invest=100.0, start=T0, fee=0.0, now=now)
+    d = client.get("/api/bots").json()
+    btc, sol = d["bots"]
+    assert btc["symbol"] == "BTCUSDT" and btc["total_profit"] == 7.5
+    assert btc["comparison"]["verdict"] in ("ahead", "behind", "level")
+    assert sol["comparison"] is None and sol["note"].startswith("no update yet")
+    assert d["totals"]["n_bots"] == 2 and d["totals"]["n_compared"] == 1

@@ -48,6 +48,9 @@ backtest_app = typer.Typer(help="Simulations on stored history (not advice)")
 app.add_typer(backtest_app, name="backtest")
 risk_app = typer.Typer(help="Your risk settings, used by tb signals")
 app.add_typer(risk_app, name="risk")
+bots_app = typer.Typer(help="Your Binance grid bots vs holding the coin "
+                       "(typed in; not advice)")
+app.add_typer(bots_app, name="bots")
 console = Console()
 
 # Walk-forward fold settings; a module attribute so tests can shrink them.
@@ -716,6 +719,170 @@ def risk_set(
             console.print(f"not saved: {exc}", markup=False, soft_wrap=True)
             raise typer.Exit(code=1)
     console.print("\n".join(settings_lines(settings)), markup=False, highlight=False)
+
+
+PROFIT_HELP = "The bot's Total profit in USDT as the Binance app shows it (not Grid profit)"
+TIME_HELP = "YYYY-MM-DD HH:MM, your PC's local time (or UTC with --utc)"
+
+
+def _bots_fail(message: str):
+    console.print(message, markup=False, soft_wrap=True)
+    raise typer.Exit(code=1)
+
+
+def _typed_time(text: str | None, utc: bool) -> tuple[datetime, str]:
+    """The UTC time to store, and a note on what was typed."""
+    from bots.times import parse_time
+
+    if text is None:
+        return datetime.now(timezone.utc).replace(second=0, microsecond=0), ""
+    try:
+        t = parse_time(text, utc)
+    except ValueError as exc:
+        _bots_fail(f"not stored: {exc}")
+    return t, "" if utc else f" (you typed {text.strip()} local time)"
+
+
+def _bot_or_fail(conn, bot_id: int) -> dict:
+    from bots.store import get_bot
+
+    bot = get_bot(conn, bot_id)
+    if bot is None:
+        _bots_fail(f"no bot {bot_id} (see tb bots list)")
+    return bot
+
+
+@bots_app.command("add")
+def bots_add(
+    symbol: str = typer.Option(..., help="The coin against USDT, for example BTCUSDT"),
+    invest: float = typer.Option(..., help="USDT put into the bot"),
+    start: str = typer.Option(..., help="When the bot started: " + TIME_HELP),
+    utc: bool = typer.Option(False, "--utc", help="Times are UTC, not local time"),
+    name: str = typer.Option(None, help="A name; default '<SYMBOL> grid'"),
+    low: float = typer.Option(None, help="Lower price of the grid range"),
+    high: float = typer.Option(None, help="Upper price of the grid range"),
+    grids: int = typer.Option(None, help="Number of grids"),
+):
+    """Record a bot you started on Binance (funded with USDT)."""
+    from bots.store import add_bot
+    from signals.settings import load_settings
+
+    t, typed = _typed_time(start, utc)
+    with connect() as conn:
+        fee = load_settings(conn).fee
+        try:
+            bot_id = add_bot(conn, symbol=symbol.upper(), invest=invest, start=t,
+                             fee=fee, now=datetime.now(timezone.utc), name=name,
+                             low=low, high=high, grids=grids)
+        except ValueError as exc:
+            _bots_fail(f"not stored: {exc}")
+    console.print(f"bot {bot_id} recorded: {name or symbol.upper() + ' grid'}, "
+                  f"{invest:,.2f} USDT, started {t:%Y-%m-%d %H:%M} UTC{typed}; "
+                  f"holding is compared with a {fee:.3%} fee",
+                  markup=False, soft_wrap=True)
+
+
+def _bots_reading(bot_id: int, profit: float, at: str | None, utc: bool,
+                  final: bool) -> None:
+    from bots.report import reading_line
+    from bots.store import add_update
+    from bots.summary import history
+
+    t, typed = _typed_time(at, utc)
+    with connect() as conn:
+        _bot_or_fail(conn, bot_id)
+        try:
+            add_update(conn, bot_id, t, profit, final=final,
+                       now=datetime.now(timezone.utc))
+        except ValueError as exc:
+            _bots_fail(f"not stored: {exc}")
+        last = history(conn, bot_id)[-1]
+    what = "stop stored; the bot is now stopped" if final else "update stored"
+    console.print(f"{what} for bot {bot_id} at {t:%Y-%m-%d %H:%M} UTC{typed}",
+                  markup=False, soft_wrap=True)
+    console.print(reading_line(last), markup=False, soft_wrap=True)
+
+
+@bots_app.command("update")
+def bots_update(
+    bot_id: int = typer.Argument(..., help="From tb bots list"),
+    profit: float = typer.Option(..., help=PROFIT_HELP),
+    at: str = typer.Option(None, help="When you read it: " + TIME_HELP + "; default now"),
+    utc: bool = typer.Option(False, "--utc", help="Times are UTC, not local time"),
+):
+    """Record a bot's current Total profit."""
+    _bots_reading(bot_id, profit, at, utc, final=False)
+
+
+@bots_app.command("stop")
+def bots_stop(
+    bot_id: int = typer.Argument(..., help="From tb bots list"),
+    profit: float = typer.Option(..., help="The bot's final Total profit in USDT "
+                                 "as the Binance app shows it (not Grid profit)"),
+    at: str = typer.Option(None, help="When it stopped: " + TIME_HELP + "; default now"),
+    utc: bool = typer.Option(False, "--utc", help="Times are UTC, not local time"),
+):
+    """Record that a bot stopped, with its final Total profit."""
+    _bots_reading(bot_id, profit, at, utc, final=True)
+
+
+@bots_app.command("undo")
+def bots_undo(bot_id: int = typer.Argument(..., help="From tb bots list")):
+    """Remove a bot's latest update (a stop update reopens the bot)."""
+    from bots.store import undo
+
+    with connect() as conn:
+        _bot_or_fail(conn, bot_id)
+        removed = undo(conn, bot_id)
+    if removed is None:
+        console.print(f"bot {bot_id} has no updates to remove", markup=False)
+        return
+    again = "; the bot is running again" if removed["final"] else ""
+    console.print(f"removed the update of {removed['at']:%Y-%m-%d %H:%M} UTC "
+                  f"(Total profit {removed['total_profit']:,.2f} USDT){again}",
+                  markup=False, soft_wrap=True)
+
+
+@bots_app.command("delete")
+def bots_delete(
+    bot_id: int = typer.Argument(..., help="From tb bots list"),
+    yes: bool = typer.Option(False, "--yes", help="Confirm: removes the bot and all its updates"),
+):
+    """Remove a bot and all its updates."""
+    from bots.store import delete_bot
+
+    with connect() as conn:
+        bot = _bot_or_fail(conn, bot_id)
+        if not yes:
+            _bots_fail(f"this removes bot {bot_id} ({bot['name']}) and all its "
+                       "updates; run it again with --yes to confirm")
+        delete_bot(conn, bot_id)
+    console.print(f"bot {bot_id} ({bot['name']}) removed", markup=False)
+
+
+@bots_app.command("list")
+def bots_list():
+    """Every bot at its latest update against holding, and all bots together."""
+    from bots.compare import totals
+    from bots.report import render_list
+    from bots.summary import bot_rows
+
+    with connect() as conn:
+        rows = bot_rows(conn)
+    t = totals([(r["invest_usdt"], r["comparison"]) for r in rows])
+    console.print(render_list(rows, t), markup=False, highlight=False, soft_wrap=True)
+
+
+@bots_app.command("show")
+def bots_show(bot_id: int = typer.Argument(..., help="From tb bots list")):
+    """One bot's full update history against holding."""
+    from bots.report import render_show
+    from bots.summary import bot_row, history
+
+    with connect() as conn:
+        bot = bot_row(conn, _bot_or_fail(conn, bot_id))
+        hist = history(conn, bot_id)
+    console.print(render_show(bot, hist), markup=False, highlight=False, soft_wrap=True)
 
 
 if __name__ == "__main__":

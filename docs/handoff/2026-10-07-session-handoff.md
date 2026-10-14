@@ -10,7 +10,8 @@ sub-project 4 (spot grid backtest) was merged on 2026-10-11 (`6c6acf7`),
 its keep-the-coin pauses on 2026-10-11 (`abb2416`) and its per-year
 report on 2026-10-11 (`9b6d2c4`).
 Sub-project 5 (grid conditions and risk settings) was merged on
-2026-10-14 (`ec1be28`).
+2026-10-14 (`ec1be28`). Sub-project 6 v1 (bots vs holding) is on branch
+`feat/bots-6`, **not merged** (§5g).
 
 > Trust `git log` and the spec over this document if they ever disagree.
 
@@ -41,7 +42,8 @@ and vision-model parts are out of scope).
    3.5. Minimal read-only dashboard. **Done and merged** (§5c).
 4. Backtesting: **spot grid backtest done and merged** (§5e).
 5. Signals, risk and portfolio: **v1 (grid conditions and risk settings)
-   done and merged** (§5f). 6. Bot monitoring.
+   done and merged** (§5f). 6. Bot monitoring: **v1 (bots vs holding)
+   built on `feat/bots-6`, not merged** (§5g).
 7. Bot advisor. 8. LLM assistant (the user picks the LLM then).
 9. Full dashboard. 10. Demo, then shadow, then controlled real trading.
 
@@ -356,6 +358,43 @@ user: option A, a daily grid-conditions report per coin with risk settings.
   Cosmetic fix after: the dashboard always shows 2 decimals on prices
   ("121.00", not "121").
 
+## 5g. Current state of sub-project 6 (bot monitoring v1: bots vs holding)
+
+**Built on `feat/bots-6`, not merged.** Spec
+`docs/superpowers/specs/2026-10-14-bots-6-design.md`, plan
+`docs/superpowers/plans/2026-10-14-bots-6.md`. Agreed with the user
+(2026-10-14): the question is "did my bots beat just holding the coin";
+bots are spot grids funded with USDT only, any number; numbers are **typed
+in** (user's choice; whether Binance's API exposes spot grid bots was not
+checked); the figure is the app's **Total profit** (the page shows Total
+and Grid profit).
+
+- New package `bots/` (times, compare, store, prices, summary, report),
+  migration `008_bots.sql` (`bots`, `bot_updates`), commands `tb bots
+  add/update/stop/undo/delete/list/show`, dashboard tab **Bots**
+  (`/api/bots`).
+- Hold = invest × (1 − fee) × P(T)/P(start), fee fixed per bot at `add`
+  (from `risk_settings`); price = open of the latest stored 1m candle at or
+  before the time, at most 10 min old, else "no stored price".
+- Typed times are PC local time (the app's), `--utc` optional; echoed in UTC.
+- Rulings (builder check): `undo` fixes a mistyped update/stop; per-bot fee
+  so later fee changes do not rewrite history. Loss limits stay deferred:
+  updates are typed irregularly, so a daily limit cannot be checked.
+- Final review (fresh reviewer): no Critical or Important. Fixed the
+  minors: `stop` help text, years outside 2017–2100 refused cleanly (Windows
+  raised OSError), cheap-coin ranges keep their digits, invest ≥ 1 USDT,
+  "level" relative to the investment, times read back in UTC whatever the
+  DB session zone, DB checks against NaN/Infinity, the Bots table scrolls
+  inside its own box at phone width, more tests (NaN, −invest, 10-min
+  boundary, help texts).
+- Test infrastructure fix: the scheduled aggregate refresh jobs could
+  materialize one test's candles mid-suite, so 5 feature/chart tests failed
+  in full runs only. `tests/conftest.py` now pauses those jobs in the test
+  DB and clears the views before each db test. Result: 354 unit + 191 db
+  pass (cloud).
+- Not yet run on the user's PC (needs `git pull`, `pip install -e
+  ".[dev]"` for the new package, `tb db upgrade` for migration 008).
+
 ## 6. Next steps
 
 1. Done: the first `tb ml evaluate` on real data (results above).
@@ -446,9 +485,10 @@ user: option A, a daily grid-conditions report per coin with risk settings.
 10. Done and merged 2026-10-14 (`ec1be28`, user's approval; merged result:
    333 unit + 158 db + 8 leakage canaries pass): sub-project 5 v1 (§5f),
    checked on the PC on stale and fresh data.
-11. **Next:** ask the user (superpowers:brainstorming). Candidates: 6 bot
-   monitoring (also enables the deferred loss limits); a dir2 direction
-   backtest with fees; 2b Market Profile.
+11. In progress 2026-10-14: sub-project 6 v1 (§5g) on `feat/bots-6`.
+   **Next:** the user records their bots on the PC, then decides on the
+   merge. Later candidates: automatic reading from Binance if its API
+   allows; a dir2 direction backtest with fees; 2b Market Profile.
    The holdout (from 2025-10-01) is still unused; keep it
    so. Known cosmetic item: `tb predict`/`tb analyze` print INFO log lines
    from the feature build.

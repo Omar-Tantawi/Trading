@@ -1,4 +1,4 @@
-# AI Trading Buddy — Data, Market Features, Prediction Models, Dashboard, Backtests and Grid Conditions
+# AI Trading Buddy — Data, Market Features, Prediction Models, Dashboard, Backtests, Grid Conditions and Bot Monitoring
 
 Verified Binance market-data warehouse (sub-project 1), the market
 features computed from it (sub-project 2a), prediction models measured
@@ -304,6 +304,32 @@ the BNB rate). Daily and weekly loss limits need your bots' real results
 and come with bot monitoring (sub-project 6).
 
 Nothing here places orders or says what to trade; the decision is yours.
+
+## Your bots vs holding the coin (sub-project 6)
+
+```bash
+.venv\Scripts\tb.exe bots add --symbol BTCUSDT --invest 500 --start "2026-10-14 09:30"
+.venv\Scripts\tb.exe bots update 1 --profit 12.34
+.venv\Scripts\tb.exe bots list
+```
+
+Record the Binance spot grid bots you run (funded with USDT), then type in
+each bot's **Total profit** from the Binance app whenever you want a
+comparison (Total profit, not Grid profit: it includes the coin the bot
+holds). For each update the system works out what the same USDT would have
+made if you had turned it into the coin at the bot's start (one fee, the
+fee from `tb risk show`) and kept it, using the stored 1-minute prices, and
+says whether the bot is ahead of or behind holding.
+
+- Times are your PC's local time (`YYYY-MM-DD HH:MM`, as the app shows);
+  add `--utc` to type UTC. Every command echoes the UTC time it stored.
+- `tb bots update ID --profit X [--at TIME]`, `tb bots stop ID --profit X`
+  (final result), `tb bots undo ID` (removes the latest update; undoing a
+  stop makes the bot running again), `tb bots show ID` (full history),
+  `tb bots delete ID --yes`.
+- The coin's prices must be stored (`tb backfill`; coins outside SYMBOLS
+  show "no stored price").
+- The dashboard's **Bots** tab shows the same as `tb bots list`.
 
 ## Facts worth knowing
 

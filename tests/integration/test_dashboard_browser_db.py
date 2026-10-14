@@ -1,6 +1,7 @@
 """Browser smoke test (spec section 6): the real page in Chromium against the
 test database. Skipped where Playwright or Chromium is not installed."""
 import os
+import re
 import threading
 import time
 
@@ -33,6 +34,13 @@ def server(db_conn, migrated_db, monkeypatch, tmp_path):
     from signals.engine import evaluate
     from signals.settings import RiskSettings
     from signals.store import save_signal
+    from datetime import timedelta
+
+    from bots.store import add_bot, add_update
+    from tests.integration.test_features_cli_db import T0
+    now = T0 + timedelta(days=20)
+    bot = add_bot(db_conn, symbol="BTCUSDT", invest=500.0, start=T0, fee=0.00075, now=now)
+    add_update(db_conn, bot, T0 + timedelta(days=3), 6.0, final=False, now=now)
     for symbol in ("BTCUSDT", "ETHUSDT"):
         save_signal(db_conn, evaluate(collect(db_conn, symbol, False, root=tmp_path),
                                       RiskSettings()))
@@ -91,6 +99,16 @@ def test_every_tab_renders_without_errors(server):
         import re
         assert not re.search(r"\b(buy|sell|long|short|enter|exit)\b",
                              page.inner_text("#signals"), re.IGNORECASE)
+        assert page.evaluate("document.documentElement.scrollWidth") <= 700
+
+        page.click("button[data-tab=bots]")
+        page.wait_for_selector("#bots-table tbody tr:has-text('BTCUSDT')")
+        text = page.inner_text("#bots")
+        assert "running" in text and "no update yet" not in text
+        assert re.search(r"(ahead of|behind) holding by [\d,.]+ USDT|level with holding",
+                         page.inner_text("#bots-table"))
+        assert "All bots" in page.inner_text("#bots-table")
+        assert not re.search(r"\b(buy|sell|long|short|enter|exit)\b", text, re.IGNORECASE)
         assert page.evaluate("document.documentElement.scrollWidth") <= 700
 
         page.click("button[data-tab=health]")

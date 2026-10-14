@@ -27,7 +27,35 @@ def migrated_db():
 
     get_settings.cache_clear()
     run_migrations(TEST_DSN)
+    _pause_scheduled_refreshes(TEST_DSN)
     return TEST_DSN
+
+
+_VIEWS = ("candles_5m", "candles_15m", "candles_1h", "candles_4h", "candles_1d")
+
+
+def _pause_scheduled_refreshes(dsn: str) -> None:
+    """The refresh policies run on their own every 5 to 60 minutes. In the
+    test database that could materialize one test's candles into the views
+    in the middle of the suite, where later tests would read them as stale
+    bars. Tests that need a refresh call it (or CALL run_job) themselves."""
+    import psycopg
+
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        conn.execute(
+            "SELECT alter_job(job_id, scheduled => false) "
+            "FROM timescaledb_information.jobs "
+            "WHERE proc_name = 'policy_refresh_continuous_aggregate'")
+
+
+def _clear_views(dsn: str) -> None:
+    """Deleting 1m rows only logs an invalidation; refreshing the whole
+    (now empty) history removes rows the views had materialized."""
+    import psycopg
+
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        for view in _VIEWS:
+            conn.execute("CALL refresh_continuous_aggregate(%s, NULL, NULL)", (view,))
 
 
 @pytest.fixture
@@ -43,13 +71,14 @@ def db_conn(migrated_db):
     try:
         with conn.cursor() as cur:
             # the feature tables reference symbols, so they go first
-            for table in ("signals", "risk_settings", "ml_runs",
+            for table in ("bot_updates", "bots", "signals", "risk_settings", "ml_runs",
                           "features_5m", "features_15m", "features_1h",
                           "features_4h", "features_1d",
                           "candles_1m", "book_ticker", "ingestion_runs",
                           "data_quality_reports", "symbols"):
                 cur.execute(f"DELETE FROM {table}")
         conn.commit()
+        _clear_views(migrated_db)
         yield conn
     finally:
         conn.close()
