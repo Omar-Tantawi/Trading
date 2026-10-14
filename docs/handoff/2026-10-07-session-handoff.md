@@ -10,8 +10,8 @@ sub-project 4 (spot grid backtest) was merged on 2026-10-11 (`6c6acf7`),
 its keep-the-coin pauses on 2026-10-11 (`abb2416`) and its per-year
 report on 2026-10-11 (`9b6d2c4`).
 Sub-project 5 (grid conditions and risk settings) was merged on
-2026-10-14 (`ec1be28`). Sub-project 6 v1 (bots vs holding) is on branch
-`feat/bots-6`, **not merged** (§5g).
+2026-10-14 (`ec1be28`). Sub-project 6 v1 (bots vs holding) was merged on 2026-10-14
+(`f62423b`).
 
 > Trust `git log` and the spec over this document if they ever disagree.
 
@@ -43,7 +43,7 @@ and vision-model parts are out of scope).
 4. Backtesting: **spot grid backtest done and merged** (§5e).
 5. Signals, risk and portfolio: **v1 (grid conditions and risk settings)
    done and merged** (§5f). 6. Bot monitoring: **v1 (bots vs holding)
-   built on `feat/bots-6`, not merged** (§5g).
+   done and merged** (§5g).
 7. Bot advisor. 8. LLM assistant (the user picks the LLM then).
 9. Full dashboard. 10. Demo, then shadow, then controlled real trading.
 
@@ -360,7 +360,7 @@ user: option A, a daily grid-conditions report per coin with risk settings.
 
 ## 5g. Current state of sub-project 6 (bot monitoring v1: bots vs holding)
 
-**Built on `feat/bots-6`, not merged.** Spec
+**Done and merged** (2026-10-14, `f62423b`). Spec
 `docs/superpowers/specs/2026-10-14-bots-6-design.md`, plan
 `docs/superpowers/plans/2026-10-14-bots-6.md`. Agreed with the user
 (2026-10-14): the question is "did my bots beat just holding the coin";
@@ -392,8 +392,10 @@ and Grid profit).
   in full runs only. `tests/conftest.py` now pauses those jobs in the test
   DB and clears the views before each db test. Result: 354 unit + 191 db
   pass (cloud).
-- Not yet run on the user's PC (needs `git pull`, `pip install -e
-  ".[dev]"` for the new package, `tb db upgrade` for migration 008).
+- First PC run (2026-10-14): bot 1 BTCUSDT grid, 500 USDT, started
+  2026-10-12 11:20 UTC, update +4.20 at 09:14 UTC showed "no stored price"
+  because stored candles ended earlier (`tb live` not running); the
+  comparison fills in after `tb backfill` (computed when shown).
 
 ## 6. Next steps
 
@@ -485,10 +487,11 @@ and Grid profit).
 10. Done and merged 2026-10-14 (`ec1be28`, user's approval; merged result:
    333 unit + 158 db + 8 leakage canaries pass): sub-project 5 v1 (§5f),
    checked on the PC on stale and fresh data.
-11. In progress 2026-10-14: sub-project 6 v1 (§5g) on `feat/bots-6`.
-   **Next:** the user records their bots on the PC, then decides on the
-   merge. Later candidates: automatic reading from Binance if its API
-   allows; a dir2 direction backtest with fees; 2b Market Profile.
+11. Done and merged 2026-10-14 (`f62423b`, user's approval; merged result:
+   354 unit + 191 db + 8 leakage canaries pass): sub-project 6 v1 (§5g).
+12. **Next:** ask the user (superpowers:brainstorming). Candidates: automatic
+   reading of bots from Binance if its API allows; a dir2 direction
+   backtest with fees; 2b Market Profile; 7 bot advisor.
    The holdout (from 2025-10-01) is still unused; keep it
    so. Known cosmetic item: `tb predict`/`tb analyze` print INFO log lines
    from the feature build.
