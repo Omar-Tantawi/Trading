@@ -346,8 +346,11 @@ user: option A, a daily grid-conditions report per coin with risk settings.
   "checked" time is converted to UTC; tests compare P(wild) with `tb
   predict`'s. Deferred minor: the model is loaded once per coin (speed
   only). Tests: 333 unit + 158 db pass (cloud).
-- Not yet run on the user's PC (needs `tb db upgrade` for migration 007,
-  and `tb ml train --target vol3` if the vol3 models are not saved).
+- First PC run (2026-10-14 06:10 UTC, capital 2,000 USDT): dashboard
+  Signals tab works; all four coins WAIT, because the newest 1h bar
+  (closed 2026-10-11 06:00 UTC) was 3 days old (`tb live` not running), and
+  P(wild) was 40–57 % (BTC 56.9, SOL 53.8, BNB 45.1, ETH 40.1), all above
+  the 25 % threshold. Next: `tb backfill`, then `tb signals` on fresh data.
 
 ## 6. Next steps
 
