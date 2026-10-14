@@ -41,6 +41,7 @@ it measures.
 - Numbers are **typed in** (the user's choice after automatic reading was
   raised; whether Binance's API exposes spot grid bots was not checked).
 - Bots are funded with USDT only.
+- The figure typed in is the app's **Total profit** (not Grid profit).
 
 ### Non-goals (and where they go)
 
@@ -66,6 +67,10 @@ A **bot**: `id` (assigned), `name` (optional, default `<SYMBOL> grid`),
 
 An **update**: `bot_id`, `at` (time of the reading), `total_profit` (USDT,
 may be negative, must be > −invest), `final` (true for the stop update).
+`total_profit` is the app's **Total profit** field, not **Grid profit**
+(confirmed with the user 2026-10-14: the page shows both). Total profit
+includes the gain or loss on the coin the bot holds, which the comparison
+with holding needs; the help text of `--profit` says so.
 Rules: `start_time ≤ at ≤ now`; no update after a final one; `at` not
 before the bot's previous update. Several updates may share a day.
 
