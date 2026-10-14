@@ -350,7 +350,11 @@ user: option A, a daily grid-conditions report per coin with risk settings.
   Signals tab works; all four coins WAIT, because the newest 1h bar
   (closed 2026-10-11 06:00 UTC) was 3 days old (`tb live` not running), and
   P(wild) was 40–57 % (BTC 56.9, SOL 53.8, BNB 45.1, ETH 40.1), all above
-  the 25 % threshold. Next: `tb backfill`, then `tb signals` on fresh data.
+  the 25 % threshold. After `tb backfill` + `tb signals` (2026-10-14 06:36
+  UTC, bar closed 06:00): all four GRID CONDITIONS NORMAL, P(wild) BTC 20.4,
+  BNB 18.8, ETH 12.3, SOL 7.6 %; ranges e.g. BTC 77,835–89,098 (step 1.28 %).
+  Cosmetic fix after: the dashboard always shows 2 decimals on prices
+  ("121.00", not "121"). Waiting on the user's merge decision.
 
 ## 6. Next steps
 

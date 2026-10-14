@@ -207,7 +207,11 @@ async function loadHealth() {
 // ---- signals tab
 const utc = (t) => (t ? t.slice(0, 16).replace("T", " ") : "-");
 // enough decimals for coins priced well under 1 USDT
-const num = (v) => (v == null ? "-" : v.toLocaleString("en-US", { maximumFractionDigits: Math.abs(v) >= 10 ? 2 : Math.abs(v) >= 0.1 ? 4 : 6 }));
+const num = (v) => {
+  if (v == null) return "-";
+  const d = Math.abs(v) >= 10 ? 2 : Math.abs(v) >= 0.1 ? 4 : 6;
+  return v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+};
 // rounded down, so 24.96% never shows as the 25% threshold it is below
 const pctDown = (v) => `${(Math.floor(v * 1000 + 1e-9) / 10).toFixed(1)}%`;
 const isoUtc = (t) => (t ? new Date(Date.parse(t)).toISOString() : null);
