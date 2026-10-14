@@ -146,6 +146,7 @@ New package `bots/`:
 | `bots/store.py` | Bots and updates: add, update, stop, delete, read; validation | yes |
 | `bots/compare.py` | Pure: bot + update + two prices + fee → comparison; totals | no |
 | `bots/prices.py` | Price at a time from `candles_1m` | yes (read) |
+| `bots/summary.py` | Each bot at its latest update, and one bot's history, with comparisons | yes (read) |
 | `bots/report.py` | Text for `list` and `show` | no |
 | `bots/times.py` | Parse typed times (local or UTC) | no |
 

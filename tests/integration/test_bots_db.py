@@ -84,3 +84,47 @@ def test_delete_cascades(db_conn):
     assert delete_bot(db_conn, bid) is True
     assert get_bot(db_conn, bid) is None and updates(db_conn, bid) == []
     assert [b["name"] for b in list_bots(db_conn)] == ["eth one"]
+
+
+# ---- prices and rows
+
+from bots.compare import compare  # noqa: E402
+from bots.prices import price_at  # noqa: E402
+from bots.summary import bot_rows, history  # noqa: E402
+from tests.integration.test_features_cli_db import T0 as C0, _insert  # noqa: E402
+
+
+def test_price_at(db_conn):
+    _insert(db_conn, "BTCUSDT", range(0, 60))
+    with db_conn.cursor() as cur:
+        cur.execute("SELECT open FROM candles_1m WHERE open_time = %s",
+                    (C0 + timedelta(minutes=30),))
+        open30 = float(cur.fetchone()[0])
+    assert price_at(db_conn, "BTCUSDT", C0 + timedelta(minutes=30)) == open30
+    assert price_at(db_conn, "BTCUSDT", C0 + timedelta(minutes=30, seconds=40)) == open30
+    assert price_at(db_conn, "BTCUSDT", C0 + timedelta(minutes=59 + 9)) is not None
+    assert price_at(db_conn, "BTCUSDT", C0 + timedelta(minutes=59 + 11)) is None
+    assert price_at(db_conn, "BTCUSDT", C0 - timedelta(minutes=1)) is None
+    assert price_at(db_conn, "ETHUSDT", C0) is None
+
+
+def test_rows_and_history(db_conn):
+    _insert(db_conn, "BTCUSDT", range(0, 120))
+    now = C0 + timedelta(days=1)
+    a = add_bot(db_conn, symbol="BTCUSDT", invest=500.0, start=C0, fee=0.001, now=now)
+    add_update(db_conn, a, C0 + timedelta(minutes=60), 3.0, final=False, now=now)
+    add_update(db_conn, a, C0 + timedelta(minutes=100), 4.0, final=False, now=now)
+    b = add_bot(db_conn, symbol="SOLUSDT", invest=200.0, start=C0, fee=0.001, now=now)
+    add_update(db_conn, b, C0 + timedelta(minutes=5), 1.0, final=False, now=now)
+    c = add_bot(db_conn, symbol="BTCUSDT", invest=100.0, start=C0, fee=0.001, now=now)
+    rows = {r["id"]: r for r in bot_rows(db_conn)}
+    ra = rows[a]
+    p0 = price_at(db_conn, "BTCUSDT", C0)
+    p1 = price_at(db_conn, "BTCUSDT", C0 + timedelta(minutes=100))
+    assert ra["total_profit"] == 4.0 and ra["status"] == "running"
+    assert ra["comparison"].hold_profit == compare(500, 0.001, 4.0, p0, p1).hold_profit
+    assert rows[b]["comparison"] is None and "no stored price for SOLUSDT" in rows[b]["note"]
+    assert rows[c]["note"] == f"no update yet (tb bots update {c} --profit X)"
+    h = history(db_conn, a)
+    assert [x["total_profit"] for x in h] == [3.0, 4.0]
+    assert all(x["comparison"] is not None for x in h)
