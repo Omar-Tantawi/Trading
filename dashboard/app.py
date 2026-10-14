@@ -23,6 +23,8 @@ from features.pipeline import FEATURE_TIMEFRAMES
 from ml import store
 from ml.diagnose import split_skill
 from ml.report import MODEL_ORDER, render_report
+from bots.compare import totals as bot_totals
+from bots.summary import bot_rows
 from signals.render import PROFILE_NOTES
 from signals.settings import load_settings
 from signals.store import latest_signals
@@ -143,5 +145,14 @@ def create_app(connect: Callable[[], psycopg.Connection]) -> FastAPI:
             settings = load_settings(conn)
         return {"signals": rows, "settings": settings.to_dict(),
                 "profile_note": PROFILE_NOTES[settings.profile]}
+
+    @app.get("/api/bots")
+    def bots():
+        with db() as conn:
+            rows = bot_rows(conn)
+        t = bot_totals([(r["invest_usdt"], r["comparison"]) for r in rows])
+        for r in rows:
+            r["comparison"] = r["comparison"] and r["comparison"].to_dict()
+        return {"bots": rows, "totals": t.to_dict()}
 
     return app

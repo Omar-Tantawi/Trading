@@ -243,6 +243,43 @@ async function loadSignals() {
   } catch (e) { const r = body.insertRow(); cell(r, `Could not load: ${e.message}`, "stale"); }
 }
 
-const LOADERS = { chart: loadChartTab, models: loadModels, signals: loadSignals, health: loadHealth };
+// ---- bots tab
+const usdt = (v) => `${v >= 0 ? "+" : ""}${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+const pts = (v) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(2)}`;
+
+function verdictText(c) {
+  if (c.verdict === "level") return "level with holding";
+  const word = c.verdict === "ahead" ? "ahead of" : "behind";
+  return `${word} holding by ${Math.abs(c.diff).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT (${pts(c.diff_pts)} pts)`;
+}
+
+async function loadBots() {
+  const body = $("bots-table").querySelector("tbody");
+  body.textContent = "";
+  try {
+    const d = await getJSON("/api/bots");
+    if (!d.bots.length) { const r = body.insertRow(); cell(r, "no bots yet (tb bots add)"); return; }
+    for (const b of d.bots) {
+      const r = body.insertRow();
+      const c = b.comparison;
+      cell(r, b.id); cell(r, b.name); cell(r, b.symbol); cell(r, b.status);
+      cell(r, utc(isoUtc(b.start_time)));
+      cell(r, `${num(b.invest_usdt)} USDT`);
+      cell(r, utc(isoUtc(b.at)));
+      cell(r, c ? `${usdt(c.bot_profit)} (${pct(c.bot_pct)})` : (b.total_profit == null ? "-" : usdt(b.total_profit)));
+      cell(r, c ? `${usdt(c.hold_profit)} (${pct(c.hold_pct)})` : "-");
+      cell(r, c ? verdictText(c) : b.note, c && c.verdict === "behind" ? "stale" : "");
+    }
+    const t = d.totals, r = body.insertRow();
+    r.className = "total";
+    cell(r, ""); cell(r, "All bots"); cell(r, ""); cell(r, `${t.n_compared} of ${t.n_bots} compared`);
+    cell(r, ""); cell(r, t.n_compared ? `${num(t.invested)} USDT` : "-"); cell(r, "");
+    cell(r, t.n_compared ? `${usdt(t.bot_profit)} (${pct(t.bot_pct)})` : "-");
+    cell(r, t.n_compared ? `${usdt(t.hold_profit)} (${pct(t.hold_pct)})` : "-");
+    cell(r, t.n_compared ? verdictText(t) : "nothing to compare yet");
+  } catch (e) { const r = body.insertRow(); cell(r, `Could not load: ${e.message}`, "stale"); }
+}
+
+const LOADERS = { chart: loadChartTab, models: loadModels, signals: loadSignals, bots: loadBots, health: loadHealth };
 loaded.chart = true;
 loadChartTab().catch((e) => { $("chart-status").className = "status error"; $("chart-status").textContent = `Could not load: ${e.message}`; });
