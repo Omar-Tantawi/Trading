@@ -46,6 +46,8 @@ ml_app = typer.Typer(help="Prediction models (measurements, not advice)")
 app.add_typer(ml_app, name="ml")
 backtest_app = typer.Typer(help="Simulations on stored history (not advice)")
 app.add_typer(backtest_app, name="backtest")
+risk_app = typer.Typer(help="Your risk settings, used by tb signals")
+app.add_typer(risk_app, name="risk")
 console = Console()
 
 # Walk-forward fold settings; a module attribute so tests can shrink them.
@@ -238,9 +240,11 @@ def _result_line(r: BuildResult) -> str:
 
 
 def _build_symbols(conn, targets: list[str], timeframes: tuple[str, ...],
-                   rebuild: bool) -> bool:
+                   rebuild: bool, problems: dict[str, str] | None = None) -> bool:
     """Build each symbol, print one line per (symbol, timeframe), and return
-    True if anything was skipped or failed.
+    True if anything was skipped or failed. When `problems` is given, each
+    symbol that failed gets its first problem there ("data quality FAIL",
+    "error: ..." when the build raised, or "<timeframe>: <reason>").
 
     `build_symbol` isolates the timeframes. This also isolates the symbols,
     so an error in the quality gate itself is reported and the rest go on.
@@ -261,10 +265,16 @@ def _build_symbols(conn, targets: list[str], timeframes: tuple[str, ...],
             console.print(f"[red]{s}: feature build failed: "
                           f"{escape(str(exc))}[/red]", soft_wrap=True)
             failed = True
+            if problems is not None:
+                problems.setdefault(s, f"error: {exc}")
             continue
         for r in results:
             console.print(_result_line(r), soft_wrap=True)
             failed = failed or r.skipped_reason is not None
+            if problems is not None and r.skipped_reason is not None:
+                problems.setdefault(s, r.skipped_reason if r.skipped_reason ==
+                                    "data quality FAIL" else
+                                    f"{r.timeframe}: {r.skipped_reason}")
     return failed
 
 
@@ -601,6 +611,111 @@ def backtest_grid(
                         for name in STRATEGIES}
     console.print(render(run_id, fee, SLIPPAGE, coins), markup=False,
                   highlight=False, soft_wrap=True)
+
+
+@app.command("signals")
+def signals_cmd(
+    no_build: bool = typer.Option(
+        False, "--no-build", help="Use the stored features without building"),
+):
+    """Grid conditions per coin: WAIT or normal, with every reason (not advice)."""
+    from signals import collect as signals_collect
+    from signals.engine import error_signal, evaluate
+    from signals.render import render as render_signals
+    from signals.settings import load_settings
+    from signals.store import save_signal
+
+    _setup_logging()
+    symbols = get_settings().symbols
+    failed, problems, sigs = False, {}, []
+    with connect() as conn:
+        settings = load_settings(conn)
+        for s in symbols:
+            # one coin's error must not stop the others (as _build_symbols)
+            try:
+                if not no_build and last_candle_time(conn, s) is not None:
+                    failed = _build_symbols(conn, [s], FEATURE_TIMEFRAMES, False,
+                                            problems) or failed
+                problem = problems.get(s)
+                if no_build or (problem and problem.startswith("error: ")):
+                    quality = None             # the quality gate did not finish
+                else:
+                    quality = problem == "data quality FAIL"
+                build_problem = None if problem in (None, "data quality FAIL") else problem
+                sig = evaluate(signals_collect.collect(conn, s, quality,
+                                                       build_problem=build_problem),
+                               settings)
+            except Exception as exc:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass  # a broken connection must not mask the original error
+                logging.getLogger(__name__).error("%s: signal failed: %s", s, exc)
+                failed = True
+                sig = error_signal(s, str(exc), settings)
+            try:
+                save_signal(conn, sig)
+            except Exception as exc:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                console.print(f"{s}: could not store the signal: {exc}",
+                              markup=False, soft_wrap=True)
+                failed = True
+            sigs.append(sig)
+    console.print(render_signals(sigs, settings, datetime.now(timezone.utc)),
+                  markup=False, highlight=False, soft_wrap=True)
+    if failed:
+        console.print("[red]a feature build or a coin's signal failed or was "
+                      "skipped; see the lines above[/red]")
+        raise typer.Exit(code=1)
+
+
+@risk_app.command("show")
+def risk_show():
+    """Print your risk settings."""
+    from signals.render import settings_lines
+    from signals.settings import load_settings
+
+    with connect() as conn:
+        settings = load_settings(conn)
+    console.print("\n".join(settings_lines(settings)), markup=False, highlight=False)
+
+
+@risk_app.command("set")
+def risk_set(
+    profile: str = typer.Option(None, help="defensive or return"),
+    wild_threshold: float = typer.Option(
+        None, "--wild-threshold", help="WAIT when P(wild) is at or above this (0.05 to 0.95)"),
+    capital: float = typer.Option(None, "--capital", help="Your grid capital in USDT"),
+    no_capital: bool = typer.Option(False, "--no-capital", help="Forget the capital"),
+    max_coin_share: float = typer.Option(
+        None, "--max-coin-share", help="Largest share of capital per coin (0.01 to 1)"),
+    fee: float = typer.Option(None, help="Fee per fill (0.00075 = 0.075%)"),
+):
+    """Change some risk settings; the others stay as they are."""
+    from dataclasses import replace
+
+    from signals.render import settings_lines
+    from signals.settings import load_settings, save_settings
+
+    changes = {k: v for k, v in dict(profile=profile, wild_threshold=wild_threshold,
+                                     capital_usdt=capital, max_coin_share=max_coin_share,
+                                     fee=fee).items() if v is not None}
+    if no_capital:
+        if capital is not None:
+            console.print("give --capital or --no-capital, not both", markup=False)
+            raise typer.Exit(code=1)
+        changes["capital_usdt"] = None
+    with connect() as conn:
+        settings = replace(load_settings(conn), **changes)
+        try:
+            save_settings(conn, settings)
+        except ValueError as exc:
+            console.print(f"not saved: {exc}", markup=False, soft_wrap=True)
+            raise typer.Exit(code=1)
+    console.print("\n".join(settings_lines(settings)), markup=False, highlight=False)
 
 
 if __name__ == "__main__":

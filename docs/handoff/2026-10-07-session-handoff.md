@@ -9,6 +9,8 @@ sub-project 3b (vol3 / dir2 targets) was merged on 2026-10-11 (`d97c496`);
 sub-project 4 (spot grid backtest) was merged on 2026-10-11 (`6c6acf7`),
 its keep-the-coin pauses on 2026-10-11 (`abb2416`) and its per-year
 report on 2026-10-11 (`9b6d2c4`).
+Sub-project 5 (grid conditions and risk settings) is on branch
+`feat/signals-5`, **not merged** (§5f).
 
 > Trust `git log` and the spec over this document if they ever disagree.
 
@@ -38,7 +40,8 @@ and vision-model parts are out of scope).
    merged** (v1: mostly a volatility forecaster; see §5b).
    3.5. Minimal read-only dashboard. **Done and merged** (§5c).
 4. Backtesting: **spot grid backtest done and merged** (§5e).
-5. Signals, risk and portfolio. 6. Bot monitoring.
+5. Signals, risk and portfolio: **v1 (grid conditions and risk settings)
+   built on `feat/signals-5`, not merged** (§5f). 6. Bot monitoring.
 7. Bot advisor. 8. LLM assistant (the user picks the LLM then).
 9. Full dashboard. 10. Demo, then shadow, then controlled real trading.
 
@@ -312,6 +315,47 @@ bots are spot grids.
   one draw (seed 0); the interval covers return noise, not the choice of
   random days.
 
+## 5f. Current state of sub-project 5 (grid conditions and risk settings)
+
+**Built on `feat/signals-5`, not merged.** Spec
+`docs/superpowers/specs/2026-10-11-signals-risk-5-design.md`, plan
+`docs/superpowers/plans/2026-10-11-signals-risk-5.md`. Agreed with the
+user: option A, a daily grid-conditions report per coin with risk settings.
+
+- New package `signals/` (settings, pure engine, collect, store, render),
+  migration `007_signals.sql` (tables `risk_settings`, `signals`),
+  commands `tb signals [--no-build]`, `tb risk show`, `tb risk set`,
+  dashboard tab **Signals** (`/api/signals`).
+- Status WAIT or GRID CONDITIONS NORMAL. Gates forcing WAIT: no market
+  data, 1m quality FAIL, newest 1h bar STALE, vol3 xgb_v1 24h model missing
+  or not fitting (or the coin not in its training symbols), atr_pct
+  missing, grid step not paying two fees (as in the backtest). Then
+  P(wild) ≥ threshold → WAIT.
+- Defaults: profile defensive, threshold 0.25, capital not set, max coin
+  share 0.25, fee 0.00075. Every stored signal records its settings.
+- Rulings: with `--no-build` the quality check does not run, and the
+  signal says so instead of claiming PASS. Loss limits deferred to
+  sub-project 6 (they need real bot results).
+- Final review (fresh reviewer, 2026-10-11): no Critical. Fixed: one
+  coin's error no longer stops `tb signals` (that coin is WAIT "could not
+  evaluate", the rest go on, exit 1); a feature build that raised is WAIT
+  "feature build failed …" instead of counting as quality PASS; P(wild) is
+  shown rounded down to 0.1 % so it never seems to equal a threshold it is
+  below; prices keep decimals for coins under 1 USDT; the threshold is on
+  each coin's P(wild) line; DB range checks on the settings; the dashboard's
+  "checked" time is converted to UTC; tests compare P(wild) with `tb
+  predict`'s. Deferred minor: the model is loaded once per coin (speed
+  only). Tests: 333 unit + 158 db pass (cloud).
+- First PC run (2026-10-14 06:10 UTC, capital 2,000 USDT): dashboard
+  Signals tab works; all four coins WAIT, because the newest 1h bar
+  (closed 2026-10-11 06:00 UTC) was 3 days old (`tb live` not running), and
+  P(wild) was 40–57 % (BTC 56.9, SOL 53.8, BNB 45.1, ETH 40.1), all above
+  the 25 % threshold. After `tb backfill` + `tb signals` (2026-10-14 06:36
+  UTC, bar closed 06:00): all four GRID CONDITIONS NORMAL, P(wild) BTC 20.4,
+  BNB 18.8, ETH 12.3, SOL 7.6 %; ranges e.g. BTC 77,835–89,098 (step 1.28 %).
+  Cosmetic fix after: the dashboard always shows 2 decimals on prices
+  ("121.00", not "121"). Waiting on the user's merge decision.
+
 ## 6. Next steps
 
 1. Done: the first `tb ml evaluate` on real data (results above).
@@ -399,8 +443,12 @@ bots are spot grids.
    2022 (−19 % vs −45 %), at the cost of lower returns in up years. In
    2022 the forecast beat random pausing in both forms (exit −19 % vs
    random −40 %; keep −44 % vs random −50 %).
-10. **Next:** ask the user (superpowers:brainstorming). Candidates: a dir2 direction backtest with fees; 2b Market Profile;
-   5 signals/risk. The holdout (from 2025-10-01) is still unused; keep it
+10. In progress 2026-10-11: sub-project 5 v1 (§5f) on `feat/signals-5`.
+   **Next:** the user runs it on the PC (`tb db upgrade`, `tb risk show`,
+   `tb signals`), then decides on the merge. After that, ask the user
+   (superpowers:brainstorming): candidates 6 bot monitoring (also enables
+   loss limits); a dir2 direction backtest with fees; 2b Market Profile.
+   The holdout (from 2025-10-01) is still unused; keep it
    so. Known cosmetic item: `tb predict`/`tb analyze` print INFO log lines
    from the feature build.
 

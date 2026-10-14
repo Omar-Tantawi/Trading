@@ -204,6 +204,45 @@ async function loadHealth() {
   } catch (e) { $("health-status").textContent = `Could not load: ${e.message}`; }
 }
 
-const LOADERS = { chart: loadChartTab, models: loadModels, health: loadHealth };
+// ---- signals tab
+const utc = (t) => (t ? t.slice(0, 16).replace("T", " ") : "-");
+// enough decimals for coins priced well under 1 USDT
+const num = (v) => {
+  if (v == null) return "-";
+  const d = Math.abs(v) >= 10 ? 2 : Math.abs(v) >= 0.1 ? 4 : 6;
+  return v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+};
+// rounded down, so 24.96% never shows as the 25% threshold it is below
+const pctDown = (v) => `${(Math.floor(v * 1000 + 1e-9) / 10).toFixed(1)}%`;
+const isoUtc = (t) => (t ? new Date(Date.parse(t)).toISOString() : null);
+
+async function loadSignals() {
+  const body = $("signals-table").querySelector("tbody");
+  body.textContent = "";
+  try {
+    const d = await getJSON("/api/signals");
+    const s = d.settings;
+    const capital = s.capital_usdt == null ? "capital not set" : `capital ${num(s.capital_usdt)} USDT`;
+    $("signals-settings").textContent = `Settings: profile ${s.profile} · WAIT when P(wild) >= ${+(s.wild_threshold * 100).toFixed(1)}%`
+      + ` · ${capital} · max ${(s.max_coin_share * 100).toFixed(0)}% per coin · fee ${(s.fee * 100).toFixed(3)}% (change with tb risk set)`;
+    $("signals-profile").textContent = d.profile_note;
+    if (!d.signals.length) { const r = body.insertRow(); cell(r, "no signals yet (run tb signals)"); return; }
+    for (const g of d.signals) {
+      const r = body.insertRow();
+      const bar = g.bar_open_time ? new Date(Date.parse(g.bar_open_time) + 3600000).toISOString() : null;
+      cell(r, g.symbol);
+      cell(r, g.status === "WAIT" ? "WAIT" : "GRID CONDITIONS NORMAL", g.status === "WAIT" ? "stale" : "");
+      cell(r, g.reasons.join("; "));
+      cell(r, g.p_wild == null ? "-" : pctDown(g.p_wild));
+      cell(r, g.range_low == null ? "-" : `${num(g.range_low)} to ${num(g.range_high)}`);
+      cell(r, g.step_pct == null ? "-" : `${(g.step_pct * 100).toFixed(2)}%`);
+      cell(r, g.capital_limit == null ? `${(g.settings.max_coin_share * 100).toFixed(0)}% of capital` : `${num(g.capital_limit)} USDT`);
+      cell(r, utc(bar));
+      cell(r, utc(isoUtc(g.created_at)));
+    }
+  } catch (e) { const r = body.insertRow(); cell(r, `Could not load: ${e.message}`, "stale"); }
+}
+
+const LOADERS = { chart: loadChartTab, models: loadModels, signals: loadSignals, health: loadHealth };
 loaded.chart = true;
 loadChartTab().catch((e) => { $("chart-status").className = "status error"; $("chart-status").textContent = `Could not load: ${e.message}`; });

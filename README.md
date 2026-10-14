@@ -1,4 +1,4 @@
-# AI Trading Buddy — Data, Market Features, Prediction Models, Dashboard and Backtests
+# AI Trading Buddy — Data, Market Features, Prediction Models, Dashboard, Backtests and Grid Conditions
 
 Verified Binance market-data warehouse (sub-project 1), the market
 features computed from it (sub-project 2a), prediction models measured
@@ -271,6 +271,39 @@ It uses the stored walk-forward `vol3` 24h predictions (so first run
   all-coins portfolio, or for the one coin given with `--symbol`.
 - It is a simulation of the past, not advice: real fills, fees and outages
   differ.
+
+## Grid conditions and risk settings (sub-project 5)
+
+```bash
+.venv\Scripts\tb.exe risk show
+.venv\Scripts\tb.exe risk set --capital 2000 --max-coin-share 0.25
+.venv\Scripts\tb.exe signals
+```
+
+`tb signals` builds the newest features (skip with `--no-build`), then for
+each coin prints **WAIT** or **GRID CONDITIONS NORMAL** with every reason:
+
+- WAIT whatever the forecast when there is no market data, the 1m data
+  quality check FAILs, the newest 1h bar is STALE (older than 2 h 5 min),
+  the `vol3` 24h model is missing or no longer fits (`tb ml train --target
+  vol3`), the volatility measure is missing, or the grid step could not pay
+  two fees;
+- otherwise WAIT when the forecast chance of a wild next 24 h, P(wild), is
+  at or above your threshold (default 25 %), else normal.
+
+It also shows the backtest's grid range around the last close (10 grids,
++/-3 usual 24h moves) and the capital limit per coin (capital x max coin
+share). Every signal is stored with the settings it used, and the newest one
+per coin appears on the dashboard's **Signals** tab.
+
+`tb risk set` options: `--profile defensive|return` (what the backtest did
+on WAIT days: spent them in USDT, or kept the coin and cancelled the
+grid's orders), `--wild-threshold` (0.05 to 0.95), `--capital` (USDT) or
+`--no-capital`, `--max-coin-share` (0.01 to 1), `--fee` (default 0.00075,
+the BNB rate). Daily and weekly loss limits need your bots' real results
+and come with bot monitoring (sub-project 6).
+
+Nothing here places orders or says what to trade; the decision is yours.
 
 ## Facts worth knowing
 
